@@ -45,3 +45,15 @@ export function stats(mode: "paper" | "live" = "paper") {
     startCash: getSetting<number>("paper_start_cash", 10000),
   };
 }
+
+/** Attach live price + unrealised PnL to open positions (closed rows keep their realised numbers). */
+export async function withLivePnl<T extends { status: string; symbol: string; qty: number; entryPrice: number; pnl: number | null; pnlPct: number | null; exitPrice: number | null }>(rows: T[]) {
+  if (!rows.some((r) => r.status === "open")) return rows.map((r) => ({ ...r, live: false as const, price: r.exitPrice }));
+  const tickers = await fetchTickers(getGlobal().quote).catch(() => ({} as Record<string, { last: number }>));
+  return rows.map((r) => {
+    if (r.status !== "open") return { ...r, live: false as const, price: r.exitPrice };
+    const price = tickers[r.symbol]?.last ?? r.entryPrice;
+    const pnl = (price - r.entryPrice) * r.qty;
+    return { ...r, live: true as const, price, pnl, pnlPct: (pnl / (r.entryPrice * r.qty)) * 100 };
+  });
+}

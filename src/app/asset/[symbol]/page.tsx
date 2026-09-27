@@ -16,7 +16,7 @@ interface Asset {
   ticker: { changePct: number; high: number; low: number; quoteVolume: number; bid?: number; ask?: number } | null;
   indicators: { h1: Ind; h4: Ind; d1: Ind };
   perf: { h24: number | null; d7: number; d30: number | null; high7d: number; low7d: number; high30d: number; low30d: number };
-  positions: { id: number; entryAt: number; entryPrice: number; exitPrice: number | null; pnl: number | null; pnlPct: number | null; status: string; exitReason: string | null; source: string; botId: number | null }[];
+  positions: { id: number; entryAt: number; entryPrice: number; exitPrice: number | null; price: number | null; live: boolean; pnl: number | null; pnlPct: number | null; status: string; exitReason: string | null; source: string; botId: number | null }[];
   suggestions: { id: number; side: string; entry: number; stopLoss: number; takeProfit: number; confidence: number; timeframe: string; rationale: string; status: string; createdAt: number }[];
   bots: { id: number; name: string; strategy: string; status: string; intervalSec: number }[];
 }
@@ -29,7 +29,7 @@ const tone = (s: string) => s.includes("up") ? "text-up" : s.includes("down") ? 
 export default function AssetPage({ params }: { params: Promise<{ symbol: string }> }) {
   const symbol = slugToSym(use(params).symbol);
   const slug = symToSlug(symbol);
-  const { data: a, error } = useApi<Asset>(`/api/asset/${slug}`, 30000);
+  const { data: a, error } = useApi<Asset>(`/api/asset/${slug}`, 10000);
   const { data: news } = useApi<News[]>(`/api/asset/${slug}/news`, 10 * 60000);
   const { data: engine } = useApi<{ aiKey: boolean }>("/api/engine", 0);
   const [interval, setInterval] = useState("60");
@@ -109,9 +109,9 @@ export default function AssetPage({ params }: { params: Promise<{ symbol: string
 
           <Card title={`Your history on ${a.symbol}`}>
             {a.positions.length ? (
-              <table className="tbl"><thead><tr><th>Opened</th><th>Source</th><th className="text-right">Entry</th><th className="text-right">Exit</th><th className="text-right">PnL</th><th>Reason</th><th></th></tr></thead>
+              <table className="tbl"><thead><tr><th>Opened</th><th>Source</th><th className="text-right">Entry</th><th className="text-right">Exit / Now</th><th className="text-right">PnL</th><th>Reason</th><th></th></tr></thead>
                 <tbody>{a.positions.map((p) => (
-                  <tr key={p.id}><td className="text-xs text-muted">{fmtTime(p.entryAt)}</td><td className="text-xs text-muted">{p.botId ? <Link className="text-accent" href={`/bots/${p.botId}`}>bot {p.botId}</Link> : p.source}</td><td className="num text-right">{fmtPrice(p.entryPrice)}</td><td className="num text-right">{fmtPrice(p.exitPrice)}</td><td className={cls("num text-right", pnlClass(p.pnl))}>{p.pnl == null ? "open" : `${fmtUsd(p.pnl)} (${fmtPct(p.pnlPct)})`}</td><td className="text-xs text-muted">{p.exitReason ?? "—"}</td><td><StatusPill status={p.status} /></td></tr>
+                  <tr key={p.id}><td className="text-xs text-muted">{fmtTime(p.entryAt)}</td><td className="text-xs text-muted">{p.botId ? <Link className="text-accent" href={`/bots/${p.botId}`}>bot {p.botId}</Link> : p.source}</td><td className="num text-right">{fmtPrice(p.entryPrice)}</td><td className={cls("num text-right", p.live && "text-muted")}>{fmtPrice(p.price)}</td><td className={cls("num text-right", pnlClass(p.pnl))}>{fmtUsd(p.pnl)} ({fmtPct(p.pnlPct)}){p.live && <span className="ml-1 text-[10px] text-accent">live</span>}</td><td className="text-xs text-muted">{p.exitReason ?? "—"}</td><td><StatusPill status={p.status} /></td></tr>
                 ))}</tbody></table>
             ) : <Empty>No trades on this asset yet.</Empty>}
           </Card>

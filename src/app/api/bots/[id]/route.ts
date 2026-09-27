@@ -4,6 +4,7 @@ import { handle } from "@/lib/api";
 import { getBot } from "@/lib/bots";
 import { BotInput } from "@/lib/validation";
 import { openPositions } from "@/lib/executor";
+import { withLivePnl } from "@/lib/portfolio";
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -13,7 +14,7 @@ export async function GET(_: Request, { params }: Ctx) {
     const bot = getBot(id); if (!bot) throw new Error("Not found");
     const positions = db.select().from(schema.positions).where(eq(schema.positions.botId, id)).all().sort((a, b) => b.entryAt - a.entryAt).slice(0, 50);
     const logs = db.select().from(schema.logs).where(eq(schema.logs.botId, id)).all().sort((a, b) => b.ts - a.ts).slice(0, 100);
-    return { bot, positions, logs };
+    return { bot, positions: await withLivePnl(positions), logs };
   });
 }
 

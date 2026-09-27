@@ -10,7 +10,7 @@ import { fmtPct, fmtPrice, fmtTime, fmtUsd, cls, pnlClass, fmtAgo } from "@/lib/
 
 interface Detail {
   bot: BotFormValues & { id: number; status: string; lastSignal: string | null; lastError: string | null; lastRunAt: number | null };
-  positions: { id: number; entryAt: number; exitAt: number | null; entryPrice: number; exitPrice: number | null; qty: number; pnl: number | null; pnlPct: number | null; status: string; exitReason: string | null }[];
+  positions: { id: number; entryAt: number; exitAt: number | null; entryPrice: number; exitPrice: number | null; price: number | null; live: boolean; qty: number; pnl: number | null; pnlPct: number | null; status: string; exitReason: string | null }[];
   logs: { id: number; ts: number; level: string; message: string }[];
 }
 
@@ -50,9 +50,9 @@ export default function BotDetail({ params }: { params: Promise<{ id: string }> 
             </Card>
             <Card title={`Positions (${positions.length})`} right={<span className={cls("num text-sm", pnlClass(closedPnl))}>{fmtUsd(closedPnl)} realised</span>}>
               {positions.length ? (
-                <table className="tbl"><thead><tr><th>Opened</th><th className="text-right">Entry</th><th className="text-right">Exit</th><th className="text-right">PnL</th><th>Exit reason</th><th></th></tr></thead>
+                <table className="tbl"><thead><tr><th>Opened</th><th className="text-right">Entry</th><th className="text-right">Exit / Now</th><th className="text-right">PnL</th><th>Exit reason</th><th></th></tr></thead>
                   <tbody>{positions.map((p) => (
-                    <tr key={p.id}><td className="text-xs text-muted">{fmtTime(p.entryAt)}</td><td className="num text-right">{fmtPrice(p.entryPrice)}</td><td className="num text-right">{fmtPrice(p.exitPrice)}</td><td className={cls("num text-right", pnlClass(p.pnl))}>{p.pnl == null ? "open" : `${fmtUsd(p.pnl)} (${fmtPct(p.pnlPct)})`}</td><td className="text-xs text-muted">{p.exitReason ?? "—"}</td><td><StatusPill status={p.status} /></td></tr>
+                    <tr key={p.id}><td className="text-xs text-muted">{fmtTime(p.entryAt)}</td><td className="num text-right">{fmtPrice(p.entryPrice)}</td><td className={cls("num text-right", p.live && "text-muted")}>{fmtPrice(p.price)}</td><td className={cls("num text-right", pnlClass(p.pnl))}>{fmtUsd(p.pnl)} ({fmtPct(p.pnlPct)}){p.live && <span className="ml-1 text-[10px] text-accent">live</span>}</td><td className="text-xs text-muted">{p.exitReason ?? "—"}</td><td><StatusPill status={p.status} /></td></tr>
                   ))}</tbody></table>
               ) : <Empty>No positions yet.</Empty>}
             </Card>

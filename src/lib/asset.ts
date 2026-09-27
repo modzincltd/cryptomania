@@ -6,6 +6,7 @@ import { getGlobal } from "./settings";
 import { listBots } from "./bots";
 import { getFavourites } from "./favourites";
 import { coinName } from "./symbol";
+import { withLivePnl } from "./portfolio";
 
 export async function assetOverview(symbol: string) {
   const g = getGlobal();
@@ -38,7 +39,7 @@ export async function assetOverview(symbol: string) {
     symbol, name: coinName(symbol), price, ticker: t ?? null, favourite: getFavourites().includes(symbol),
     indicators: { h1: ind(h1), h4: ind(h4), d1: ind(d1) }, perf,
     spark: h1.slice(-96).map((c) => ({ t: c.ts, v: c.close })),
-    positions, suggestions, bots,
+    positions: await withLivePnl(positions), suggestions, bots,
     tvSymbol: `${process.env.EXCHANGE?.toUpperCase() || "BINANCE"}:${symbol.replace("/", "")}`,
   };
 }
