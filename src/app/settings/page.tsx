@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { api, refresh, useApi } from "@/lib/client";
 import { Card, PageHeader } from "@/components/ui";
 import { fmtUsd } from "@/lib/format";
@@ -8,10 +8,10 @@ interface S { global: { maxOpenPositions: number; maxDailyLossUsd: number; quote
 
 export default function Settings() {
   const { data, mutate } = useApi<S>("/api/settings", 0);
-  const [g, setG] = useState<S["global"] | null>(null);
+  const [edited, setG] = useState<S["global"] | null>(null);
+  const g = edited ?? data?.global ?? null;
   const [reset, setReset] = useState(10000);
   const [msg, setMsg] = useState<string | null>(null);
-  useEffect(() => { if (data && !g) setG(data.global); }, [data, g]);
   if (!data || !g) return <div className="text-muted text-sm">Loading…</div>;
   const save = async () => { try { await api("/api/settings", "PATCH", { global: g }); await mutate(); setMsg("Saved"); setTimeout(() => setMsg(null), 1500); } catch (e) { alert((e as Error).message); } };
   const doReset = async () => { if (!confirm(`Wipe all paper positions/trades and reset cash to $${reset}?`)) return; await api("/api/settings", "PATCH", { resetPaper: reset }); await mutate(); await refresh("/api"); };

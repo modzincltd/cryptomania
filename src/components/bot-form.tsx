@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, refresh, useApi } from "@/lib/client";
 import { Card } from "./ui";
@@ -28,7 +28,7 @@ export function BotForm({ initial, botId }: { initial?: Partial<BotFormValues>; 
   const [busy, setBusy] = useState(false);
   const strat = strategies?.find((s) => s.id === v.strategy);
 
-  useEffect(() => { if (strat && !initial?.params) setV((x) => ({ ...x, params: { ...strat.defaultParams } })); }, [strat?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const params = Object.keys(v.params).length ? v.params : { ...(strat?.defaultParams ?? {}) };
 
   const set = <K extends keyof BotFormValues>(k: K, val: BotFormValues[K]) => setV((x) => ({ ...x, [k]: val }));
   const setRisk = (k: keyof BotFormValues["risk"], val: number) => setV((x) => ({ ...x, risk: { ...x.risk, [k]: val } }));
@@ -36,7 +36,7 @@ export function BotForm({ initial, botId }: { initial?: Partial<BotFormValues>; 
   const submit = async (start: boolean) => {
     setBusy(true); setErr(null);
     try {
-      const body = { ...v, name: v.name || `${v.symbol.split("/")[0]} ${strat?.name ?? v.strategy}`, ...(start ? { status: "running" } : {}) };
+      const body = { ...v, params, name: v.name || `${v.symbol.split("/")[0]} ${strat?.name ?? v.strategy}`, ...(start ? { status: "running" } : {}) };
       if (botId) await api(`/api/bots/${botId}`, "PATCH", body); else await api("/api/bots", "POST", body);
       await refresh("/api"); router.push("/bots");
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -77,7 +77,7 @@ export function BotForm({ initial, botId }: { initial?: Partial<BotFormValues>; 
             </div>
             {strat && <p className="text-sm text-muted">{strat.description}</p>}
             {strat && <div className="grid md:grid-cols-4 gap-3">
-              {Object.keys(strat.defaultParams).map((k) => num(strat.paramLabels[k] ?? k, v.params[k] ?? strat.defaultParams[k], (n) => set("params", { ...v.params, [k]: n }), undefined, 0.1))}
+              {Object.keys(strat.defaultParams).map((k) => num(strat.paramLabels[k] ?? k, params[k] ?? strat.defaultParams[k], (n) => set("params", { ...params, [k]: n }), undefined, 0.1))}
             </div>}
           </div>
         </Card>

@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
 import { useApi } from "@/lib/client";
 import { Card, Empty, PageHeader, StatusPill } from "@/components/ui";
@@ -10,6 +11,7 @@ interface Bot { id: number; name: string; symbol: string; strategy: string; time
 
 export default function BotsPage() {
   const { data: bots } = useApi<Bot[]>("/api/bots", 10000);
+  const [now] = useState(() => Date.now());
   return (
     <>
       <PageHeader title="Bots" sub="Each bot scans on its own interval (30s / 1m / 5m) and manages one symbol.">
@@ -33,7 +35,7 @@ export default function BotsPage() {
                     <td className="num text-xs text-muted">-{b.risk.stopLossPct}% / +{b.risk.takeProfitPct}%</td>
                     <td className="text-xs max-w-[260px] truncate">
                       {b.lastError ? <span className="text-down">⚠ {b.lastError}</span> : sig ? <><span className={sig.action === "buy" ? "text-up font-semibold" : sig.action === "sell" ? "text-down font-semibold" : "text-muted"}>{sig.action.toUpperCase()}</span> <span className="text-muted">{sig.reason} · {fmtAgo(b.lastRunAt)}</span></> : <span className="text-muted">—</span>}
-                      {b.haltedUntil && b.haltedUntil > Date.now() && <div className="text-warn">halted (daily loss limit)</div>}
+                      {b.haltedUntil && b.haltedUntil > now && <div className="text-warn">halted (daily loss limit)</div>}
                     </td>
                     <td><StatusPill status={b.status} /></td>
                     <td><BotControls id={b.id} status={b.status} compact /></td>
