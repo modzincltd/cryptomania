@@ -1,6 +1,6 @@
 export type Mode = "paper" | "live";
 export type BotStatus = "running" | "paused" | "stopped";
-export type StrategyId = "rsi" | "ema_cross" | "bollinger" | "breakout" | "macd";
+export type StrategyId = "rsi" | "ema_cross" | "bollinger" | "breakout" | "macd" | "dex_momentum" | "dex_volume_spike" | "dex_dip";
 export type IntervalSec = 30 | 60 | 300;
 export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 
@@ -26,6 +26,7 @@ export interface BotConfig {
   mode: Mode;
   status: BotStatus;
   allocationUsd: number;
+  pairId?: string | null;
 }
 
 export interface Candle {

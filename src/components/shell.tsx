@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Bot, CandlestickChart, History, LayoutDashboard, Settings, Sparkles } from "lucide-react";
+import { Activity, Bot, CandlestickChart, Flame, History, LayoutDashboard, Settings, Sparkles } from "lucide-react";
 import { useApi } from "@/lib/client";
 import { cls, fmtAgo } from "@/lib/format";
 
@@ -10,6 +10,7 @@ const NAV = [
   { href: "/bots", label: "Bots", icon: Bot },
   { href: "/ai", label: "AI Scanner", icon: Sparkles },
   { href: "/markets", label: "Markets", icon: CandlestickChart },
+  { href: "/dex", label: "DEX", icon: Flame },
   { href: "/trades", label: "Trades", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

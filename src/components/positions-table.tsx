@@ -5,7 +5,7 @@ import { fmtPrice, fmtQty, fmtUsd, fmtPct, fmtAgo, pnlClass, cls } from "@/lib/f
 import { Empty, StatusPill } from "./ui";
 import { Sym } from "./symbol";
 
-export interface LivePosition { id: number; botId: number | null; symbol: string; qty: number; entryPrice: number; entryAt: number; stopLoss: number | null; takeProfit: number | null; price: number; marketValue: number; unrealizedPnl: number; unrealizedPct: number; mode: string; source: string }
+export interface LivePosition { id: number; botId: number | null; symbol: string; pairId?: string | null; qty: number; entryPrice: number; entryAt: number; stopLoss: number | null; takeProfit: number | null; price: number; marketValue: number; unrealizedPnl: number; unrealizedPct: number; mode: string; source: string }
 
 export function PositionsTable({ positions, botNames = {} }: { positions: LivePosition[]; botNames?: Record<number, string> }) {
   const [busy, setBusy] = useState<number | null>(null);
@@ -21,7 +21,7 @@ export function PositionsTable({ positions, botNames = {} }: { positions: LivePo
         <tbody>
           {positions.map((p) => (
             <tr key={p.id}>
-              <td className="font-medium"><Sym symbol={p.symbol} /> <StatusPill status={p.mode} /></td>
+              <td className="font-medium"><Sym symbol={p.symbol} pairId={p.pairId} /> <StatusPill status={p.mode} /></td>
               <td className="text-muted text-xs">{p.botId ? botNames[p.botId] ?? `bot ${p.botId}` : p.source}</td>
               <td className="num text-right">{fmtQty(p.qty)}</td>
               <td className="num text-right">{fmtPrice(p.entryPrice)}</td>

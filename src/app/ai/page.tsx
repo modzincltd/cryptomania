@@ -6,7 +6,7 @@ import { Card, Empty, PageHeader, StatusPill } from "@/components/ui";
 import { fmtPrice, fmtTime, cls } from "@/lib/format";
 import { Sym } from "@/components/symbol";
 
-interface Sug { id: number; scanId: number; symbol: string; side: string; entry: number; stopLoss: number; takeProfit: number; confidence: number; timeframe: string; rationale: string; riskReward: number | null; status: string; createdAt: number }
+interface Sug { id: number; scanId: number | null; symbol: string; pairId?: string | null; side: string; entry: number; stopLoss: number; takeProfit: number; confidence: number; timeframe: string; rationale: string; riskReward: number | null; status: string; createdAt: number }
 interface Scan { id: number; createdAt: number; summary: string; regime: string; model: string; inputTokens: number; outputTokens: number }
 
 export default function AiPage() {
@@ -57,7 +57,7 @@ export default function AiPage() {
             return (
               <div key={s.id} className={cls("card p-4 flex flex-col gap-3", s.status !== "new" && "opacity-60")}>
                 <div className="flex items-center gap-2">
-                  <Sym symbol={s.symbol} className="font-semibold" /><StatusPill status={s.side} />
+                  <Sym symbol={s.symbol} pairId={s.pairId} className="font-semibold" /><StatusPill status={s.side} />
                   <span className="ml-auto text-xs text-muted">{s.timeframe}</span>
                 </div>
                 <div className="flex items-center gap-3">

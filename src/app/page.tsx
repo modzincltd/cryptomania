@@ -11,8 +11,8 @@ import { Sym } from "@/components/symbol";
 interface Dash {
   equity: { cash: number; positionsValue: number; equity: number; unrealized: number; positions: LivePosition[] };
   stats: { totalTrades: number; winRate: number; realized: number; realizedToday: number; profitFactor: number; startCash: number };
-  bots: { id: number; name: string; symbol: string; strategy: string; status: string; mode: string; intervalSec: number; lastSignal: string | null; lastError: string | null; lastRunAt: number | null }[];
-  recentTrades: { id: number; symbol: string; side: string; qty: number; price: number; reason: string | null; createdAt: number; mode: string }[];
+  bots: { id: number; name: string; symbol: string; pairId?: string | null; strategy: string; status: string; mode: string; intervalSec: number; lastSignal: string | null; lastError: string | null; lastRunAt: number | null }[];
+  recentTrades: { id: number; symbol: string; pairId?: string | null; side: string; qty: number; price: number; reason: string | null; createdAt: number; mode: string }[];
   lastScan: { createdAt: number; summary: string; regime: string } | null;
   engine: { online: boolean };
 }
@@ -63,7 +63,7 @@ export default function Dashboard() {
                   <li key={b.id} className="px-4 py-3 flex items-center gap-3">
                     <div className="min-w-0 flex-1">
                       <Link href={`/bots/${b.id}`} className="text-sm font-medium hover:text-accent">{b.name}</Link>
-                      <div className="text-xs text-muted truncate"><Sym symbol={b.symbol} size={12} /> · {b.strategy} · {b.intervalSec}s{sig ? ` · ${sig.action.toUpperCase()}: ${sig.reason}` : ""}{b.lastError ? ` · ⚠ ${b.lastError}` : ""}</div>
+                      <div className="text-xs text-muted truncate"><Sym symbol={b.symbol} pairId={b.pairId} size={12} /> · {b.strategy} · {b.intervalSec}s{sig ? ` · ${sig.action.toUpperCase()}: ${sig.reason}` : ""}{b.lastError ? ` · ⚠ ${b.lastError}` : ""}</div>
                     </div>
                     <StatusPill status={b.status} />
                     <BotControls id={b.id} status={b.status} compact />
@@ -79,7 +79,7 @@ export default function Dashboard() {
         {data.recentTrades.length ? (
           <table className="tbl"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th className="text-right">Qty</th><th className="text-right">Price</th><th>Reason</th></tr></thead>
             <tbody>{data.recentTrades.map((t) => (
-              <tr key={t.id}><td className="text-xs text-muted">{fmtTime(t.createdAt)}</td><td><Sym symbol={t.symbol} /></td><td className={cls("font-semibold text-xs", t.side === "buy" ? "text-up" : "text-down")}>{t.side.toUpperCase()}</td><td className="num text-right">{fmtQty(t.qty)}</td><td className="num text-right">{fmtPrice(t.price)}</td><td className={cls("text-xs text-muted", pnlClass(null))}>{t.reason}</td></tr>
+              <tr key={t.id}><td className="text-xs text-muted">{fmtTime(t.createdAt)}</td><td><Sym symbol={t.symbol} pairId={t.pairId} /></td><td className={cls("font-semibold text-xs", t.side === "buy" ? "text-up" : "text-down")}>{t.side.toUpperCase()}</td><td className="num text-right">{fmtQty(t.qty)}</td><td className="num text-right">{fmtPrice(t.price)}</td><td className={cls("text-xs text-muted", pnlClass(null))}>{t.reason}</td></tr>
             ))}</tbody></table>
         ) : <Empty>No fills yet.</Empty>}
       </Card>

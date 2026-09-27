@@ -101,7 +101,7 @@ const macdStrategy: Strategy = {
   },
 };
 
-export const STRATEGIES: Record<StrategyId, Strategy> = {
+export const STRATEGIES: Partial<Record<StrategyId, Strategy>> & Record<string, Strategy> = {
   rsi: rsiStrategy,
   ema_cross: emaCross,
   bollinger: bollingerStrategy,

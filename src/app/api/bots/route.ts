@@ -11,11 +11,13 @@ export async function GET() { return handle(() => listBots()); }
 export async function POST(req: Request) {
   return handle(async () => {
     const b = BotInput.parse(await req.json());
+    if (b.strategy.startsWith("dex_") !== !!b.pairId) throw new Error("DEX strategies need a pairId (and vice-versa)");
+    if (b.pairId && b.mode === "live") throw new Error("Live DEX execution is not wired yet — paper only for now");
     if (b.mode === "live" && !(process.env.EXCHANGE_API_KEY && process.env.EXCHANGE_API_SECRET)) throw new Error("Live mode needs exchange API keys in .env");
     const row = db.insert(schema.bots).values({
       name: b.name, symbol: b.symbol.toUpperCase(), timeframe: b.timeframe, intervalSec: b.intervalSec, strategy: b.strategy,
       params: JSON.stringify(b.params), risk: JSON.stringify({ ...DEFAULT_RISK, ...b.risk }), mode: b.mode,
-      status: b.status ?? "stopped", allocationUsd: b.allocationUsd, createdAt: Date.now(),
+      status: b.status ?? "stopped", allocationUsd: b.allocationUsd, pairId: b.pairId ?? null, createdAt: Date.now(),
     }).returning().get();
     return row;
   });

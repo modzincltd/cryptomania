@@ -6,10 +6,11 @@ import { Card, Empty, PageHeader, StatusPill } from "@/components/ui";
 import { BotControls } from "@/components/bot-controls";
 import { BotForm, type BotFormValues } from "@/components/bot-form";
 import { Sym } from "@/components/symbol";
+import { DexBotForm } from "@/components/dex-bot-form";
 import { fmtPct, fmtPrice, fmtTime, fmtUsd, cls, pnlClass, fmtAgo } from "@/lib/format";
 
 interface Detail {
-  bot: BotFormValues & { id: number; status: string; lastSignal: string | null; lastError: string | null; lastRunAt: number | null };
+  bot: BotFormValues & { id: number; pairId?: string | null; status: string; lastSignal: string | null; lastError: string | null; lastRunAt: number | null };
   positions: { id: number; entryAt: number; exitAt: number | null; entryPrice: number; exitPrice: number | null; price: number | null; live: boolean; qty: number; pnl: number | null; pnlPct: number | null; status: string; exitReason: string | null }[];
   logs: { id: number; ts: number; level: string; message: string }[];
 }
@@ -30,13 +31,13 @@ export default function BotDetail({ params }: { params: Promise<{ id: string }> 
   return (
     <>
       <PageHeader title={bot.name} sub={`${bot.strategy} on ${bot.timeframe} candles · scans every ${bot.intervalSec}s · ${bot.mode}`}>
-        <Sym symbol={bot.symbol} className="text-sm mr-2" />
+        <Sym symbol={bot.symbol} pairId={bot.pairId} className="text-sm mr-2" />
         <StatusPill status={bot.status} />
         <BotControls id={bot.id} status={bot.status} />
         <button className="btn" onClick={() => setEdit(!edit)}>{edit ? "Cancel edit" : "Edit"}</button>
         <button className="btn btn-danger" onClick={del}>Delete</button>
       </PageHeader>
-      {edit ? <BotForm botId={bot.id} initial={bot} /> : (
+      {edit ? (bot.pairId ? <DexBotForm pairId={bot.pairId} symbol={bot.symbol} botId={bot.id} initial={bot} /> : <BotForm botId={bot.id} initial={bot} />) : (
         <div className="grid xl:grid-cols-3 gap-4">
           <div className="xl:col-span-2 space-y-4">
             <Card title="Last evaluation" right={<span className="text-xs text-muted">{fmtAgo(bot.lastRunAt)}</span>}>

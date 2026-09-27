@@ -3,14 +3,16 @@ import { db, schema } from "./db";
 import { fetchTickers } from "./exchange";
 import { getGlobal, getPaperCash, getSetting } from "./settings";
 import { openPositions, realizedPnlSince, startOfDay } from "./executor";
+import { dexPrices, isDexPair } from "./dex";
 
 export async function computeEquity(mode: "paper" | "live" = "paper") {
   const g = getGlobal();
   const tickers = await fetchTickers(g.quote);
   const open = openPositions().filter((p) => p.mode === mode);
+  const dex = await dexPrices(open.filter((p) => isDexPair(p.pairId)).map((p) => p.pairId!)).catch(() => ({} as Record<string, import("./dex").DexPair>));
   let unrealized = 0, value = 0;
   const positions = open.map((p) => {
-    const price = tickers[p.symbol]?.last ?? p.entryPrice;
+    const price = (isDexPair(p.pairId) ? dex[p.pairId!]?.priceUsd : tickers[p.symbol]?.last) ?? p.entryPrice;
     const mv = price * p.qty;
     const pnl = mv - p.entryPrice * p.qty;
     unrealized += pnl; value += mv;
@@ -47,12 +49,13 @@ export function stats(mode: "paper" | "live" = "paper") {
 }
 
 /** Attach live price + unrealised PnL to open positions (closed rows keep their realised numbers). */
-export async function withLivePnl<T extends { status: string; symbol: string; qty: number; entryPrice: number; pnl: number | null; pnlPct: number | null; exitPrice: number | null }>(rows: T[]) {
+export async function withLivePnl<T extends { status: string; symbol: string; qty: number; entryPrice: number; pnl: number | null; pnlPct: number | null; exitPrice: number | null; pairId?: string | null }>(rows: T[]) {
   if (!rows.some((r) => r.status === "open")) return rows.map((r) => ({ ...r, live: false as const, price: r.exitPrice }));
   const tickers = await fetchTickers(getGlobal().quote).catch(() => ({} as Record<string, { last: number }>));
+  const dex = await dexPrices(rows.filter((r) => r.status === "open" && isDexPair(r.pairId)).map((r) => r.pairId!)).catch(() => ({} as Record<string, import("./dex").DexPair>));
   return rows.map((r) => {
     if (r.status !== "open") return { ...r, live: false as const, price: r.exitPrice };
-    const price = tickers[r.symbol]?.last ?? r.entryPrice;
+    const price = (isDexPair(r.pairId) ? dex[r.pairId!]?.priceUsd : tickers[r.symbol]?.last) ?? r.entryPrice;
     const pnl = (price - r.entryPrice) * r.qty;
     return { ...r, live: true as const, price, pnl, pnlPct: (pnl / (r.entryPrice * r.qty)) * 100 };
   });

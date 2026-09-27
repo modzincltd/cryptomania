@@ -8,6 +8,14 @@ Rules-based crypto bot desk with an AI market scanner. Next.js dashboard + a sep
 - **Risk rules per bot**: stop-loss, take-profit, trailing stop, max position size, max daily loss (auto-halt), cooldown, max open positions. Plus global caps in Settings.
 - **AI scanner**: builds an indicator snapshot of the top-N pairs and asks Claude for structured trade ideas (entry / stop / target / confidence / rationale). One click to paper-buy or spin into a bot. Optional auto-scan every N minutes.
 
+## DEX (paper, phase 1)
+
+- `/dex` — trending/boosted and newly-profiled pairs on Solana / Base / ETH / BSC via DexScreener (no key), plus search and favourites. Every pair gets a 0-100 score and safety flags (liquidity, age, volume, buy/sell skew, socials); flagged pairs are blocked for bots and greyed for manual buys.
+- `/dex/[chain]/[pair]` — embedded DexScreener chart, txn flow, your history, AI deep dive (with rug-risk call), quick paper buy, and a DEX bot builder.
+- DEX strategies: **Momentum Rider**, **Volume Spike**, **Dip Buyer** — driven by DexScreener 5m/1h/6h stats and buy/sell flow (no OHLCV needed). Engine polls every 30s/1m and records price+liquidity ticks.
+- Always-on protections: SL / TP / trailing stop and a **rug guard** (exit if pool liquidity drops 40% from entry). Paper fills model constant-product price impact from pool liquidity + ~0.6% fees.
+- Live swaps (Jupiter for Solana, 0x for EVM) are phase 2 — bots/positions with a pairId are paper-only until then.
+
 ## Run
 
 ```bash

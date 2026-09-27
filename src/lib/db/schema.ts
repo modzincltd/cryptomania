@@ -17,6 +17,7 @@ export const bots = sqliteTable("bots", {
   mode: text("mode").notNull().default("paper"),
   status: text("status").notNull().default("stopped"),
   allocationUsd: real("allocation_usd").notNull().default(500),
+  pairId: text("pair_id"),
   createdAt: integer("created_at").notNull(),
   lastRunAt: integer("last_run_at"),
   lastSignal: text("last_signal"),
@@ -44,6 +45,8 @@ export const positions = sqliteTable("positions", {
   pnlPct: real("pnl_pct"),
   mode: text("mode").notNull().default("paper"),
   source: text("source").notNull().default("bot"), // bot | manual | ai
+  pairId: text("pair_id"),
+  entryLiquidity: real("entry_liquidity"),
 });
 
 export const trades = sqliteTable("trades", {
@@ -59,6 +62,7 @@ export const trades = sqliteTable("trades", {
   reason: text("reason"),
   exchangeOrderId: text("exchange_order_id"),
   createdAt: integer("created_at").notNull(),
+  pairId: text("pair_id"),
 });
 
 export const suggestions = sqliteTable("suggestions", {
@@ -75,6 +79,7 @@ export const suggestions = sqliteTable("suggestions", {
   riskReward: real("risk_reward"),
   status: text("status").notNull().default("new"),
   createdAt: integer("created_at").notNull(),
+  pairId: text("pair_id"),
 });
 
 export const scans = sqliteTable("scans", {

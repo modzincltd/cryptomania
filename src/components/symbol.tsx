@@ -29,11 +29,12 @@ export function StarToggle({ symbol, size = 14, className }: { symbol: string; s
 }
 
 /** Symbol text as a link to its asset page, with a star. Use everywhere a symbol appears. */
-export function Sym({ symbol, className, star = true, size = 14 }: { symbol: string; className?: string; star?: boolean; size?: number }) {
+export function Sym({ symbol, pairId, className, star = true, size = 14 }: { symbol: string; pairId?: string | null; className?: string; star?: boolean; size?: number }) {
+  const href = pairId ? `/dex/${pairId.split(":")[0]}/${pairId.split(":")[1]}` : `/asset/${symToSlug(symbol)}`;
   return (
     <span className={cls("inline-flex items-center gap-1", className)}>
-      {star && <StarToggle symbol={symbol} size={size} />}
-      <Link href={`/asset/${symToSlug(symbol)}`} className="hover:text-accent hover:underline underline-offset-2">{symbol}</Link>
+      {star && <StarToggle symbol={pairId ?? symbol} size={size} />}
+      <Link href={href} className="hover:text-accent hover:underline underline-offset-2">{symbol}{pairId && <span className="ml-1 text-[10px] text-muted uppercase">{pairId.split(":")[0].slice(0, 3)}</span>}</Link>
     </span>
   );
 }

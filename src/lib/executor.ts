@@ -4,6 +4,7 @@ import { FEE_RATE, type Mode, type RiskConfig } from "./types";
 import { adjustPaperCash, getPaperCash, getGlobal } from "./settings";
 import { fetchPrice, marketPrecision, privateExchange } from "./exchange";
 import { log } from "./log";
+import { dexPair, dexSlippagePct, DEX_FEE_RATE, isDexPair } from "./dex";
 
 export type Position = typeof schema.positions.$inferSelect;
 
@@ -17,6 +18,7 @@ export interface OpenOpts {
   source?: "bot" | "manual" | "ai";
   stopLoss?: number; // absolute overrides
   takeProfit?: number;
+  pairId?: string | null; // DEX pair (chain:address) — paper only for now
 }
 
 export function openPositions(botId?: number | null): Position[] {
@@ -34,7 +36,15 @@ export function realizedPnlSince(ts: number, botId?: number | null): number {
 
 export function startOfDay() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
 
-async function fill(mode: Mode, symbol: string, side: "buy" | "sell", qty: number): Promise<{ price: number; qty: number; fee: number; orderId?: string }> {
+async function fill(mode: Mode, symbol: string, side: "buy" | "sell", qty: number, pairId?: string | null): Promise<{ price: number; qty: number; fee: number; orderId?: string }> {
+  if (isDexPair(pairId)) {
+    if (mode !== "paper") throw new Error("Live DEX execution not wired yet (phase 2: Jupiter/0x)");
+    const p = await dexPair(pairId!, 3_000);
+    const notional = p.priceUsd * qty;
+    const slip = dexSlippagePct(notional, p.liquidityUsd) / 100;
+    const price = p.priceUsd * (side === "buy" ? 1 + slip : 1 - slip);
+    return { price, qty, fee: price * qty * DEX_FEE_RATE };
+  }
   if (mode === "paper") {
     const price = await fetchPrice(symbol);
     const slip = price * 0.0005 * (side === "buy" ? 1 : -1); // 5bps slippage
@@ -57,15 +67,23 @@ export async function openPosition(o: OpenOpts): Promise<Position> {
   const dayPnl = realizedPnlSince(startOfDay());
   if (dayPnl <= -g.maxDailyLossUsd) throw new Error(`Global daily loss limit hit (${dayPnl.toFixed(2)} USD)`);
 
-  const price = await fetchPrice(o.symbol);
-  const prec = await marketPrecision(o.symbol);
   const notional = Math.min(o.notionalUsd, o.risk?.maxPositionUsd ?? o.notionalUsd);
   if (o.mode === "paper" && notional > getPaperCash()) throw new Error(`Insufficient paper cash (${getPaperCash().toFixed(2)})`);
-  if (notional < Math.max(prec.minCost, 5)) throw new Error(`Notional ${notional} below exchange minimum`);
-  let qty = prec.amountToPrecision(notional / price);
-  if (qty < prec.minAmount) throw new Error(`Qty ${qty} below exchange minimum ${prec.minAmount}`);
+  let qty: number; let entryLiquidity: number | null = null;
+  if (isDexPair(o.pairId)) {
+    const p = await dexPair(o.pairId!, 3_000);
+    if (!p.tradable) throw new Error(`Pair blocked by safety filters: ${p.flags.join(", ")}`);
+    if (notional < 5) throw new Error("Notional below $5");
+    qty = notional / p.priceUsd; entryLiquidity = p.liquidityUsd;
+  } else {
+    const price = await fetchPrice(o.symbol);
+    const prec = await marketPrecision(o.symbol);
+    if (notional < Math.max(prec.minCost, 5)) throw new Error(`Notional ${notional} below exchange minimum`);
+    qty = prec.amountToPrecision(notional / price);
+    if (qty < prec.minAmount) throw new Error(`Qty ${qty} below exchange minimum ${prec.minAmount}`);
+  }
 
-  const f = await fill(o.mode, o.symbol, "buy", qty);
+  const f = await fill(o.mode, o.symbol, "buy", qty, o.pairId);
   qty = f.qty;
   const cost = f.price * qty + f.fee;
   if (o.mode === "paper") adjustPaperCash(-cost);
@@ -76,9 +94,9 @@ export async function openPosition(o: OpenOpts): Promise<Position> {
   const pos = db.insert(schema.positions).values({
     botId: o.botId ?? null, symbol: o.symbol, side: "long", qty, entryPrice: f.price, entryAt: now,
     stopLoss: sl, takeProfit: tp, trailingStopPct: o.risk?.trailingStopPct || null, highWater: f.price,
-    status: "open", mode: o.mode, source: o.source ?? (o.botId ? "bot" : "manual"),
+    status: "open", mode: o.mode, source: o.source ?? (o.botId ? "bot" : "manual"), pairId: o.pairId ?? null, entryLiquidity,
   }).returning().get();
-  db.insert(schema.trades).values({ botId: o.botId ?? null, positionId: pos.id, symbol: o.symbol, side: "buy", qty, price: f.price, fee: f.fee, mode: o.mode, reason: o.reason, exchangeOrderId: f.orderId, createdAt: now }).run();
+  db.insert(schema.trades).values({ botId: o.botId ?? null, positionId: pos.id, symbol: o.symbol, side: "buy", qty, price: f.price, fee: f.fee, mode: o.mode, reason: o.reason, exchangeOrderId: f.orderId, createdAt: now, pairId: o.pairId ?? null }).run();
   log(`BUY ${qty} ${o.symbol} @ ${f.price.toFixed(4)} (${o.mode}) — ${o.reason}`, { level: "trade", botId: o.botId ?? null });
   return pos;
 }
@@ -86,7 +104,7 @@ export async function openPosition(o: OpenOpts): Promise<Position> {
 export async function closePosition(posId: number, reason: string): Promise<Position> {
   const pos = db.select().from(schema.positions).where(eq(schema.positions.id, posId)).get();
   if (!pos || pos.status !== "open") throw new Error("Position not open");
-  const f = await fill(pos.mode as Mode, pos.symbol, "sell", pos.qty);
+  const f = await fill(pos.mode as Mode, pos.symbol, "sell", pos.qty, pos.pairId);
   const proceeds = f.price * f.qty - f.fee;
   if (pos.mode === "paper") adjustPaperCash(proceeds);
   const entryCost = pos.entryPrice * pos.qty;
@@ -94,7 +112,7 @@ export async function closePosition(posId: number, reason: string): Promise<Posi
   const pnlPct = (pnl / entryCost) * 100;
   const now = Date.now();
   const updated = db.update(schema.positions).set({ status: "closed", exitPrice: f.price, exitAt: now, exitReason: reason, pnl, pnlPct }).where(eq(schema.positions.id, posId)).returning().get();
-  db.insert(schema.trades).values({ botId: pos.botId, positionId: pos.id, symbol: pos.symbol, side: "sell", qty: f.qty, price: f.price, fee: f.fee, mode: pos.mode, reason, exchangeOrderId: f.orderId, createdAt: now }).run();
+  db.insert(schema.trades).values({ botId: pos.botId, positionId: pos.id, symbol: pos.symbol, side: "sell", qty: f.qty, price: f.price, fee: f.fee, mode: pos.mode, reason, exchangeOrderId: f.orderId, createdAt: now, pairId: pos.pairId }).run();
   log(`SELL ${f.qty} ${pos.symbol} @ ${f.price.toFixed(4)} pnl ${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%) — ${reason}`, { level: "trade", botId: pos.botId });
   return updated;
 }

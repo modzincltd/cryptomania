@@ -72,6 +72,14 @@ function open() {
   sqlite.pragma("busy_timeout = 5000");
   sqlite.pragma("synchronous = NORMAL");
   sqlite.exec(BOOTSTRAP);
+  // additive migrations
+  const addCol = (table: string, col: string, ddl: string) => {
+    const cols = (sqlite.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+    if (!cols.includes(col)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+  };
+  addCol("bots", "pair_id", "TEXT"); addCol("positions", "pair_id", "TEXT"); addCol("positions", "entry_liquidity", "REAL");
+  addCol("trades", "pair_id", "TEXT"); addCol("suggestions", "pair_id", "TEXT");
+  sqlite.exec("CREATE TABLE IF NOT EXISTS dex_ticks (pair_id TEXT NOT NULL, ts INTEGER NOT NULL, price REAL NOT NULL, liq REAL, PRIMARY KEY (pair_id, ts))");
   return { sqlite, db: drizzle(sqlite, { schema }) };
 }
 

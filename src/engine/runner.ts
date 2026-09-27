@@ -9,6 +9,9 @@ import { computeEquity, snapshotEquity } from "@/lib/portfolio";
 import { runScan } from "@/lib/ai";
 import { getGlobal, getSetting, setSetting } from "@/lib/settings";
 import { log } from "@/lib/log";
+import { dexPair, dexPrices, isDexPair } from "@/lib/dex";
+import { DEX_STRATEGIES } from "@/lib/dex-strategies";
+import { sqlite } from "@/lib/db";
 
 type Bot = ReturnType<typeof parseBot>;
 const running = new Set<number>(); // bots mid-tick (avoid overlap)
@@ -23,6 +26,7 @@ export async function tickBot(bot: Bot) {
   const now = Date.now();
   try {
     if (bot.haltedUntil && bot.haltedUntil > now) return;
+    if (isDexPair(bot.pairId)) { await tickDexBot(bot); return; }
     const strat = getStrategy(bot.strategy);
     const candles = await fetchCandles(bot.symbol, bot.timeframe, Math.max(strat.minCandles + 20, 200));
     if (candles.length < strat.minCandles) throw new Error(`Only ${candles.length} candles, need ${strat.minCandles}`);
@@ -71,6 +75,42 @@ export async function tickBot(bot: Bot) {
   }
 }
 
+const RUG_LIQ_DROP = 0.4; // exit if pool liquidity falls 40% from entry
+
+function recordTick(pairId: string, price: number, liq: number) {
+  try { sqlite.prepare("INSERT OR IGNORE INTO dex_ticks (pair_id, ts, price, liq) VALUES (?, ?, ?, ?)").run(pairId, Date.now(), price, liq); } catch {}
+}
+
+async function tickDexBot(bot: Bot) {
+  const now = Date.now();
+  const strat = DEX_STRATEGIES[bot.strategy];
+  if (!strat) throw new Error(`Unknown DEX strategy ${bot.strategy}`);
+  const p = await dexPair(bot.pairId!, 5_000);
+  recordTick(p.pairId, p.priceUsd, p.liquidityUsd);
+  const open = openPositions(bot.id);
+  const signal = strat.evaluate(p, bot.params, open.length > 0);
+
+  for (const pos of open) {
+    if (pos.entryLiquidity && p.liquidityUsd < pos.entryLiquidity * (1 - RUG_LIQ_DROP)) { await closePosition(pos.id, `Liquidity dropped ${Math.round((1 - p.liquidityUsd / pos.entryLiquidity) * 100)}% — rug guard`); continue; }
+    const ex = checkExit(pos, p.priceUsd);
+    if (ex.reason) { await closePosition(pos.id, ex.reason); continue; }
+    if (ex.highWater !== pos.highWater) updateHighWater(pos.id, ex.highWater);
+    if (signal.action === "sell") await closePosition(pos.id, `Signal: ${signal.reason}`);
+  }
+  const stillOpen = openPositions(bot.id);
+  if (signal.action === "buy" && stillOpen.length < bot.risk.maxOpenPositions) {
+    const dayPnl = realizedPnlSince(startOfDay(), bot.id);
+    if (dayPnl <= -bot.risk.maxDailyLossUsd) { setBot(bot.id, { haltedUntil: startOfDay() + 86_400_000 }); log(`Daily loss limit hit (${dayPnl.toFixed(2)}). Halted until tomorrow.`, { level: "warn", botId: bot.id }); }
+    else if (inCooldown(bot)) log(`Buy signal ignored — cooldown (${signal.reason})`, { botId: bot.id });
+    else if (!p.tradable) log(`Buy signal ignored — safety flags: ${p.flags.join(", ")}`, { level: "warn", botId: bot.id });
+    else {
+      try { await openPosition({ botId: bot.id, symbol: bot.symbol, pairId: bot.pairId, notionalUsd: bot.allocationUsd, mode: bot.mode, risk: bot.risk, reason: signal.reason, source: "bot" }); }
+      catch (e) { log(`Entry blocked: ${(e as Error).message}`, { level: "warn", botId: bot.id }); }
+    }
+  }
+  setBot(bot.id, { lastRunAt: now, lastError: null, lastSignal: JSON.stringify({ action: signal.action, reason: signal.reason, indicators: signal.indicators, price: p.priceUsd, at: now }) });
+}
+
 function inCooldown(bot: Bot) {
   if (!bot.risk.cooldownSec) return false;
   const lastClosed = db.select().from(schema.positions).where(eq(schema.positions.botId, bot.id)).all()
@@ -84,8 +124,14 @@ async function tickManualPositions() {
   if (!manual.length) return;
   const { fetchTickers } = await import("@/lib/exchange");
   const tickers = await fetchTickers(getGlobal().quote);
+  const dex = await dexPrices(manual.filter((p) => isDexPair(p.pairId)).map((p) => p.pairId!)).catch(() => ({} as Record<string, import("@/lib/dex").DexPair>));
   for (const pos of manual) {
-    const price = tickers[pos.symbol]?.last; if (!price) continue;
+    if (isDexPair(pos.pairId)) {
+      const d = dex[pos.pairId!]; if (!d) continue;
+      recordTick(d.pairId, d.priceUsd, d.liquidityUsd);
+      if (pos.entryLiquidity && d.liquidityUsd < pos.entryLiquidity * (1 - RUG_LIQ_DROP)) { await closePosition(pos.id, "Liquidity collapse — rug guard").catch(() => {}); continue; }
+    }
+    const price = isDexPair(pos.pairId) ? dex[pos.pairId!]?.priceUsd : tickers[pos.symbol]?.last; if (!price) continue;
     const ex = checkExit(pos, price);
     if (ex.reason) await closePosition(pos.id, ex.reason).catch((e) => log(`Close failed: ${e.message}`, { level: "error" }));
     else if (ex.highWater !== pos.highWater) updateHighWater(pos.id, ex.highWater);
