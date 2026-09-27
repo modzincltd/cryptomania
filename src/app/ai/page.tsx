@@ -34,7 +34,7 @@ export default function AiPage() {
         <label className="text-xs text-muted flex items-center gap-2">Size $<input type="number" className="input num !w-24" value={size} onChange={(e) => setSize(Number(e.target.value))} /></label>
         <button className="btn btn-primary" onClick={scan} disabled={busy || !engine?.aiKey}><Sparkles size={15} /> {busy ? "Scanning… (~30s)" : "Scan market now"}</button>
       </PageHeader>
-      {engine && !engine.aiKey && <div className="card p-3 mb-4 text-sm text-warn">Add <code className="num">ANTHROPIC_API_KEY</code> to <code>.env</code> and restart to enable scans.</div>}
+      {engine && !engine.aiKey && <div className="card p-3 mb-4 text-sm text-warn">Add <code className="num">OPEN_AI_KEY</code> or <code className="num">ANTHROPIC_API_KEY</code> to <code>.env</code> and restart to enable scans.</div>}
       {err && <div className="card p-3 mb-4 text-sm text-down">{err}</div>}
 
       {latest && (

@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { callStructured } from "./llm";
 import { db, schema } from "./db";
 import { fetchCandles, topSymbols, exchangeId } from "./exchange";
 import { atr, ema, rsi, last, round, sma } from "./indicators";
@@ -75,15 +75,12 @@ const TOOL = {
 };
 
 export async function runScan(opts: { universe?: number } = {}) {
-  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY missing in .env");
   const g = getGlobal();
   const snap = await buildMarketSnapshot(opts.universe);
   if (!snap.length) throw new Error("No market data available");
   const open = openPositions().map((p) => `${p.symbol} long @ ${p.entryPrice}`);
   const bots = listBots().filter((b) => b.status === "running").map((b) => `${b.name} (${b.symbol}, ${b.strategy})`);
 
-  const client = new Anthropic();
-  const model = g.aiModel || "claude-sonnet-5";
   const system = `You are a disciplined spot crypto analyst producing actionable, risk-managed trade ideas for a retail trader using ${exchangeId()} spot markets (long-only, no leverage).
 Rules:
 - Use ONLY the provided data. Do not invent news or prices.
@@ -100,19 +97,13 @@ ${JSON.stringify(snap)}
 
 Analyse the snapshot and call submit_scan.`;
 
-  const res = await client.messages.create({
-    model, max_tokens: 4000, system,
-    tools: [TOOL], tool_choice: { type: "tool", name: "submit_scan" },
-    messages: [{ role: "user", content: user }],
-  });
-  const block = res.content.find((b) => b.type === "tool_use");
-  if (!block || block.type !== "tool_use") throw new Error("Model returned no structured result");
-  const data = block.input as { regime: string; summary: string; suggestions: Suggestion[] };
+  const res = await callStructured<{ regime: string; summary: string; suggestions: Suggestion[] }>({ system, user, tool: TOOL, maxTokens: 4000 });
+  const data = res.data, model = `${res.provider}/${res.model}`;
 
   const now = Date.now();
   const scan = db.insert(schema.scans).values({
     createdAt: now, summary: data.summary, regime: data.regime, universe: JSON.stringify(snap.map((s) => s.symbol)),
-    model, inputTokens: res.usage.input_tokens, outputTokens: res.usage.output_tokens,
+    model, inputTokens: res.inputTokens, outputTokens: res.outputTokens,
   }).returning().get();
   const validSymbols = new Set(snap.map((s) => s.symbol));
   const rows = data.suggestions.filter((s) => validSymbols.has(s.symbol)).map((s) => ({
@@ -121,7 +112,7 @@ Analyse the snapshot and call submit_scan.`;
     riskReward: s.riskReward, status: "new", createdAt: now,
   }));
   if (rows.length) db.insert(schema.suggestions).values(rows).run();
-  log(`AI scan complete: ${data.regime}, ${rows.length} suggestions (${res.usage.input_tokens}+${res.usage.output_tokens} tokens)`);
+  log(`AI scan complete: ${data.regime}, ${rows.length} suggestions (${model}, ${res.inputTokens}+${res.outputTokens} tokens)`);
   return { scan, suggestions: rows };
 }
 
@@ -147,22 +138,16 @@ const ASSET_TOOL = {
 };
 
 export async function analyseAsset(symbol: string) {
-  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY missing in .env");
   const { assetOverview } = await import("./asset");
   const { newsFor } = await import("./news");
-  const g = getGlobal();
   const [a, news] = await Promise.all([assetOverview(symbol), newsFor(symbol).catch(() => [])]);
-  const client = new Anthropic();
-  const model = g.aiModel || "claude-sonnet-5";
-  const res = await client.messages.create({
-    model, max_tokens: 2500,
+  const res = await callStructured<{ bias: string; thesis: string; keyLevels: { support: number[]; resistance: number[] }; risks: string[]; suggestion: Suggestion }>({
+    maxTokens: 2500,
     system: `You are a disciplined spot crypto analyst (long-only, no leverage) writing a deep-dive for one asset. Use ONLY the data provided. Reference concrete numbers. Headlines are context for sentiment/catalysts only; do not treat them as verified facts. Stops ~1-2x ATR below structure, targets >= 1.5R. If nothing is actionable, say so and set side=avoid.`,
-    tools: [ASSET_TOOL], tool_choice: { type: "tool", name: "submit_analysis" },
-    messages: [{ role: "user", content: `Asset: ${a.symbol} (${a.name}) price ${a.price}\nPerformance: ${JSON.stringify(a.perf)}\nIndicators: ${JSON.stringify(a.indicators)}\nMy open/closed positions here: ${a.positions.length}\nRecent headlines (newest first):\n${news.slice(0, 15).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "none"}\n\nCall submit_analysis.` }],
+    tool: ASSET_TOOL,
+    user: `Asset: ${a.symbol} (${a.name}) price ${a.price}\nPerformance: ${JSON.stringify(a.perf)}\nIndicators: ${JSON.stringify(a.indicators)}\nMy open/closed positions here: ${a.positions.length}\nRecent headlines (newest first):\n${news.slice(0, 15).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "none"}\n\nCall submit_analysis.`,
   });
-  const block = res.content.find((b) => b.type === "tool_use");
-  if (!block || block.type !== "tool_use") throw new Error("Model returned no structured result");
-  const data = block.input as { bias: string; thesis: string; keyLevels: { support: number[]; resistance: number[] }; risks: string[]; suggestion: Suggestion };
+  const data = res.data, model = `${res.provider}/${res.model}`;
   const now = Date.now();
   let suggestionRow = null;
   if (data.suggestion) {
@@ -172,6 +157,6 @@ export async function analyseAsset(symbol: string) {
       timeframe: s.timeframe, rationale: s.rationale, riskReward: s.riskReward, status: "new", createdAt: now,
     }).returning().get();
   }
-  log(`AI deep-dive ${symbol}: ${data.bias} (${res.usage.input_tokens}+${res.usage.output_tokens} tokens)`);
-  return { ...data, suggestion: suggestionRow, model, tokens: res.usage.input_tokens + res.usage.output_tokens, createdAt: now };
+  log(`AI deep-dive ${symbol}: ${data.bias} (${model}, ${res.inputTokens}+${res.outputTokens} tokens)`);
+  return { ...data, suggestion: suggestionRow, model, tokens: res.inputTokens + res.outputTokens, createdAt: now };
 }

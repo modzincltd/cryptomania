@@ -8,6 +8,7 @@ export interface GlobalSettings {
   universeSize: number;
   aiAutoScanMin: number; // 0 = off
   aiModel: string;
+  aiProvider: "anthropic" | "openai";
 }
 
 export function getSetting<T>(key: string, fallback: T): T {
@@ -24,7 +25,7 @@ export function setSetting(key: string, value: unknown) {
 
 export function getGlobal(): GlobalSettings {
   return {
-    maxOpenPositions: 5, maxDailyLossUsd: 300, quote: "USDT", universeSize: 30, aiAutoScanMin: 0, aiModel: "claude-sonnet-5",
+    maxOpenPositions: 5, maxDailyLossUsd: 300, quote: "USDT", universeSize: 30, aiAutoScanMin: 0, aiModel: "", aiProvider: "openai",
     ...getSetting<Partial<GlobalSettings>>("global", {}),
   };
 }

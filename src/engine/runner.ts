@@ -112,7 +112,7 @@ export async function engineLoop() {
 
   // optional scheduled AI scan
   const g = getGlobal();
-  if (g.aiAutoScanMin > 0 && process.env.ANTHROPIC_API_KEY) {
+  if (g.aiAutoScanMin > 0 && (process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.OPEN_AI_KEY)) {
     const lastScan = getSetting<number>("last_auto_scan", 0);
     if (now - lastScan > g.aiAutoScanMin * 60_000) {
       setSetting("last_auto_scan", now);

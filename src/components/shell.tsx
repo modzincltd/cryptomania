@@ -14,7 +14,7 @@ const NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
-interface Engine { online: boolean; heartbeat: number; exchange: string; liveKeys: boolean; aiKey: boolean }
+interface Engine { online: boolean; heartbeat: number; exchange: string; liveKeys: boolean; aiKey: boolean; ai?: { provider: string; model: string } }
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
@@ -45,7 +45,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {eng && <div className="flex gap-1.5 flex-wrap pt-1">
             <span className="pill pill-muted">{eng.exchange}</span>
             <span className={cls("pill", eng.liveKeys ? "pill-warn" : "pill-muted")}>{eng.liveKeys ? "live keys" : "paper only"}</span>
-            <span className={cls("pill", eng.aiKey ? "pill-accent" : "pill-muted")}>{eng.aiKey ? "AI ready" : "no AI key"}</span>
+            <span className={cls("pill", eng.aiKey ? "pill-accent" : "pill-muted")}>{eng.aiKey ? `AI: ${eng.ai?.model ?? "ready"}` : "no AI key"}</span>
           </div>}
           {eng && !eng.online && <div className="text-warn">run <code className="num">npm run engine</code></div>}
         </div>

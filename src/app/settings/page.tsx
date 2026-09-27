@@ -4,10 +4,12 @@ import { api, refresh, useApi } from "@/lib/client";
 import { Card, PageHeader } from "@/components/ui";
 import { fmtUsd } from "@/lib/format";
 
-interface S { global: { maxOpenPositions: number; maxDailyLossUsd: number; quote: string; universeSize: number; aiAutoScanMin: number; aiModel: string }; paperCash: number; paperStartCash: number; engine: { exchange: string; liveKeys: boolean; aiKey: boolean; online: boolean; startedAt: number | null; ticks: number } }
+interface Models { models: { id: string; provider: string; label: string }[]; keys: { anthropic: boolean; openai: boolean }; active: { provider: string; model: string } }
+interface S { global: { maxOpenPositions: number; maxDailyLossUsd: number; quote: string; universeSize: number; aiAutoScanMin: number; aiModel: string; aiProvider: "anthropic" | "openai" }; paperCash: number; paperStartCash: number; engine: { exchange: string; liveKeys: boolean; aiKey: boolean; online: boolean; startedAt: number | null; ticks: number } }
 
 export default function Settings() {
   const { data, mutate } = useApi<S>("/api/settings", 0);
+  const { data: ai } = useApi<Models>("/api/ai/models", 0);
   const [edited, setG] = useState<S["global"] | null>(null);
   const g = edited ?? data?.global ?? null;
   const [reset, setReset] = useState(10000);
@@ -32,7 +34,20 @@ export default function Settings() {
           <div className="p-4 grid grid-cols-2 gap-3">
             {num("Universe size", "universeSize", "top N pairs by volume (5–100)")}
             {num("Auto-scan every (min)", "aiAutoScanMin", "0 = manual only · engine runs it")}
-            <label className="block col-span-2"><span className="label">Model</span><input className="input" value={g.aiModel} onChange={(e) => setG({ ...g, aiModel: e.target.value })} /></label>
+            <label className="block"><span className="label">Provider</span>
+              <select className="input" value={g.aiProvider} onChange={(e) => setG({ ...g, aiProvider: e.target.value as S["global"]["aiProvider"], aiModel: "" })}>
+                <option value="openai" disabled={ai && !ai.keys.openai}>OpenAI{ai && !ai.keys.openai ? " (no key)" : ""}</option>
+                <option value="anthropic" disabled={ai && !ai.keys.anthropic}>Anthropic{ai && !ai.keys.anthropic ? " (no key)" : ""}</option>
+              </select>
+            </label>
+            <label className="block"><span className="label">Model</span>
+              <select className="input" value={g.aiModel} onChange={(e) => setG({ ...g, aiModel: e.target.value })}>
+                <option value="">Default ({g.aiProvider === "openai" ? "gpt-5.4-mini" : "claude-sonnet-5"})</option>
+                {(ai?.models ?? []).filter((m) => m.provider === g.aiProvider).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select>
+              {!ai && <span className="text-[11px] text-muted">loading models…</span>}
+              {ai && <span className="text-[11px] text-muted">in use now: {ai.active.provider}/{ai.active.model}</span>}
+            </label>
           </div>
         </Card>
         <Card title="Market data">
@@ -41,7 +56,7 @@ export default function Settings() {
             <div className="text-sm space-y-1 pt-5 text-muted">
               <div>Exchange: <span className="text-text">{data.engine.exchange}</span> <span className="text-[11px]">(EXCHANGE in .env)</span></div>
               <div>Live keys: <span className={data.engine.liveKeys ? "text-warn" : "text-text"}>{data.engine.liveKeys ? "configured" : "not set"}</span></div>
-              <div>Anthropic key: <span className="text-text">{data.engine.aiKey ? "configured" : "not set"}</span></div>
+              <div>AI keys: <span className="text-text">{ai ? [ai.keys.openai && "OpenAI", ai.keys.anthropic && "Anthropic"].filter(Boolean).join(", ") || "none" : "…"}</span></div>
             </div>
           </div>
         </Card>

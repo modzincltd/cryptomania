@@ -36,7 +36,7 @@ data/           cryptomania.db (gitignored)
 |---|---|
 | `EXCHANGE` | `binance` (default) · `kraken` · `coinbase` · `bybit` |
 | `EXCHANGE_API_KEY/SECRET(/PASSWORD)` | live trading only |
-| `ANTHROPIC_API_KEY` | AI scans |
+| `OPEN_AI_KEY` / `ANTHROPIC_API_KEY` | AI scans — provider + model chosen in Settings (models listed live from the API) |
 | `DB_PATH` | override sqlite location |
 
 ## Notes

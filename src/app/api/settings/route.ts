@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() { return handle(() => ({ global: getGlobal(), paperCash: getPaperCash(), paperStartCash: getSetting("paper_start_cash", 10000), engine: engineStatus() })); }
 
 const Input = z.object({
-  global: z.object({ maxOpenPositions: z.number().int().min(1), maxDailyLossUsd: z.number().min(0), quote: z.string(), universeSize: z.number().int().min(5).max(100), aiAutoScanMin: z.number().min(0), aiModel: z.string() }).partial().optional(),
+  global: z.object({ maxOpenPositions: z.number().int().min(1), maxDailyLossUsd: z.number().min(0), quote: z.string(), universeSize: z.number().int().min(5).max(100), aiAutoScanMin: z.number().min(0), aiModel: z.string(), aiProvider: z.enum(["anthropic", "openai"]) }).partial().optional(),
   resetPaper: z.number().positive().optional(),
 });
 export async function PATCH(req: Request) {
