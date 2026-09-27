@@ -6,17 +6,29 @@ import { fmtPct, fmtPrice, cls } from "@/lib/format";
 import { Sym, useFavourites } from "@/components/symbol";
 
 interface T { symbol: string; last: number; changePct: number; high: number; low: number; quoteVolume: number }
+type SortKey = "symbol" | "last" | "changePct" | "range" | "quoteVolume";
+const rangePos = (t: T) => (t.high > t.low ? ((t.last - t.low) / (t.high - t.low)) * 100 : 50);
 
 export default function Markets() {
   const { data } = useApi<T[]>("/api/markets?n=60", 30000);
   const [q, setQ] = useState("");
   const [onlyFav, setOnlyFav] = useState(false);
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "quoteVolume", dir: -1 });
   const { isFav } = useFavourites();
   const [buy, setBuy] = useState<T | null>(null);
   const [size, setSize] = useState(250); const [sl, setSl] = useState(2); const [tp, setTp] = useState(4);
   const [busy, setBusy] = useState(false);
   const list = (data ?? []).filter((t) => t.symbol.toLowerCase().includes(q.toLowerCase())).filter((t) => !onlyFav || isFav(t.symbol))
-    .sort((a, b) => Number(isFav(b.symbol)) - Number(isFav(a.symbol)));
+    .sort((a, b) => {
+      const f = Number(isFav(b.symbol)) - Number(isFav(a.symbol)); if (f) return f;
+      const va = sort.key === "range" ? rangePos(a) : a[sort.key], vb = sort.key === "range" ? rangePos(b) : b[sort.key];
+      return (typeof va === "string" ? va.localeCompare(vb as string) : (va as number) - (vb as number)) * sort.dir;
+    });
+  const th = (key: SortKey, label: string, right = false) => (
+    <th className={cls("cursor-pointer select-none hover:text-text", right && "text-right")} onClick={() => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : key === "symbol" ? 1 : -1 }))}>
+      {label}{sort.key === key && <span className="ml-1 text-accent">{sort.dir === 1 ? "▲" : "▼"}</span>}
+    </th>
+  );
   const doBuy = async () => {
     if (!buy) return; setBusy(true);
     try { await api("/api/trade", "POST", { symbol: buy.symbol, notionalUsd: size, stopLossPct: sl, takeProfitPct: tp }); await refresh("/api"); setBuy(null); } catch (e) { alert((e as Error).message); } finally { setBusy(false); }
@@ -30,9 +42,9 @@ export default function Markets() {
       <div className="grid xl:grid-cols-3 gap-4">
         <Card className="xl:col-span-2">
           {!data ? <Empty>Loading…</Empty> : (
-            <table className="tbl"><thead><tr><th>#</th><th>Pair</th><th className="text-right">Price</th><th className="text-right">24h</th><th className="text-right">24h range</th><th className="text-right">Volume</th><th></th></tr></thead>
+            <table className="tbl"><thead><tr><th>#</th>{th("symbol", "Pair")}{th("last", "Price", true)}{th("changePct", "24h", true)}{th("range", "24h range", true)}{th("quoteVolume", "Volume", true)}<th></th></tr></thead>
               <tbody>{list.map((t, i) => {
-                const pos = t.high > t.low ? ((t.last - t.low) / (t.high - t.low)) * 100 : 50;
+                const pos = rangePos(t);
                 return (
                   <tr key={t.symbol}>
                     <td className="text-muted text-xs">{i + 1}</td><td className="font-medium"><Sym symbol={t.symbol} /></td>

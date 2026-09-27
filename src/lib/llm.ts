@@ -14,8 +14,10 @@ export function activeProvider(): { provider: Provider; model: string } {
   const keys = providerKeys();
   let provider: Provider = g.aiProvider;
   if (!keys[provider]) provider = keys.openai ? "openai" : "anthropic"; // fall back to whichever key exists
-  const model = g.aiModel && g.aiModel.trim() ? g.aiModel : provider === "openai" ? "gpt-5.4-mini" : "claude-sonnet-5";
-  return { provider, model };
+  const fallback = provider === "openai" ? "gpt-5.4-mini" : "claude-sonnet-5";
+  const stored = (g.aiModel ?? "").trim();
+  const matches = stored && (provider === "anthropic" ? stored.startsWith("claude") : !stored.startsWith("claude"));
+  return { provider, model: matches ? stored : fallback };
 }
 
 export async function callStructured<T>(opts: { system: string; user: string; tool: StructuredTool; maxTokens?: number }): Promise<LlmResult<T>> {

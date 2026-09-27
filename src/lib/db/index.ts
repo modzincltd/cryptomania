@@ -55,7 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_equity_ts ON equity_snapshots(ts);
 INSERT OR IGNORE INTO engine_state (id) VALUES (1);
 INSERT OR IGNORE INTO settings (key, value) VALUES ('paper_cash', '10000');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('paper_start_cash', '10000');
-INSERT OR IGNORE INTO settings (key, value) VALUES ('global', '{"maxOpenPositions":5,"maxDailyLossUsd":300,"quote":"USDT","universeSize":30,"aiAutoScanMin":0,"aiModel":"claude-sonnet-5"}');
+INSERT OR IGNORE INTO settings (key, value) VALUES ('global', '{"maxOpenPositions":5,"maxDailyLossUsd":300,"quote":"USDT","universeSize":30,"aiAutoScanMin":0,"aiModel":"","aiProvider":"openai"}');
 `;
 
 declare global {
