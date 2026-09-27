@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { useApi } from "@/lib/client";
 import { Card, Empty, PageHeader, StatusPill } from "@/components/ui";
 import { fmtPct, fmtPrice, fmtQty, fmtTime, fmtUsd, cls, pnlClass } from "@/lib/format";
@@ -9,6 +10,7 @@ interface F { id: number; symbol: string; side: string; qty: number; price: numb
 
 export default function Trades() {
   const { data } = useApi<{ positions: P[]; fills: F[] }>("/api/trades", 10000);
+  const [now] = useState(() => Date.now());
   const closed = data?.positions.filter((p) => p.status === "closed") ?? [];
   const total = closed.reduce((a, p) => a + (p.pnl ?? 0), 0);
   const openPnl = (data?.positions ?? []).filter((p) => p.status === "open").reduce((a, p) => a + (p.pnl ?? 0), 0);
@@ -24,7 +26,7 @@ export default function Trades() {
                 <td className="text-xs text-muted">{p.botId ? `bot ${p.botId}` : p.source}</td>
                 <td className="num text-right">{fmtQty(p.qty)}</td><td className="num text-right">{fmtPrice(p.entryPrice)}</td><td className={cls("num text-right", p.live && "text-muted")}>{fmtPrice(p.price)}</td>
                 <td className={cls("num text-right", pnlClass(p.pnl))}>{fmtUsd(p.pnl)} ({fmtPct(p.pnlPct)}){p.live && <span className="ml-1 text-[10px] text-accent">live</span>}</td>
-                <td className="text-xs text-muted">{`${Math.round(((p.exitAt ?? Date.now()) - p.entryAt) / 60000)}m`}</td>
+                <td className="text-xs text-muted">{`${Math.round(((p.exitAt ?? now) - p.entryAt) / 60000)}m`}</td>
                 <td className="text-xs text-muted">{p.exitReason ?? "—"}</td><td><StatusPill status={p.status} /></td>
               </tr>
             ))}</tbody></table>
