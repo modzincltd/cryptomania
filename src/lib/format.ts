@@ -1,4 +1,4 @@
-export const fmtUsd = (v: number | null | undefined, dp?: number) => v == null || isNaN(v) ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: dp ?? (Math.abs(v) < 10 ? 4 : 2), minimumFractionDigits: 2 }).format(v);
+export const fmtUsd = (v: number | null | undefined, dp?: number) => { if (v == null || isNaN(v)) return "—"; const max = dp ?? (Math.abs(v) < 10 ? 4 : 2); return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: max, minimumFractionDigits: Math.min(2, max) }).format(v); };
 export const fmtPrice = (v: number | null | undefined) => v == null ? "—" : v >= 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : v >= 1 ? v.toFixed(4) : v.toPrecision(4);
 export const fmtPct = (v: number | null | undefined, dp = 2) => v == null || isNaN(v) ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(dp)}%`;
 export const fmtQty = (v: number) => v >= 100 ? v.toFixed(2) : v >= 1 ? v.toFixed(4) : v.toPrecision(4);

@@ -5,6 +5,7 @@ import { api, refresh, useApi } from "@/lib/client";
 import { Card, Empty, PageHeader, StatusPill } from "@/components/ui";
 import { BotControls } from "@/components/bot-controls";
 import { BotForm, type BotFormValues } from "@/components/bot-form";
+import { Sym } from "@/components/symbol";
 import { fmtPct, fmtPrice, fmtTime, fmtUsd, cls, pnlClass, fmtAgo } from "@/lib/format";
 
 interface Detail {
@@ -28,7 +29,8 @@ export default function BotDetail({ params }: { params: Promise<{ id: string }> 
 
   return (
     <>
-      <PageHeader title={bot.name} sub={`${bot.symbol} · ${bot.strategy} on ${bot.timeframe} candles · scans every ${bot.intervalSec}s · ${bot.mode}`}>
+      <PageHeader title={bot.name} sub={`${bot.strategy} on ${bot.timeframe} candles · scans every ${bot.intervalSec}s · ${bot.mode}`}>
+        <Sym symbol={bot.symbol} className="text-sm mr-2" />
         <StatusPill status={bot.status} />
         <BotControls id={bot.id} status={bot.status} />
         <button className="btn" onClick={() => setEdit(!edit)}>{edit ? "Cancel edit" : "Edit"}</button>

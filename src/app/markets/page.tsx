@@ -3,16 +3,20 @@ import { useState } from "react";
 import { api, refresh, useApi } from "@/lib/client";
 import { Card, Empty, PageHeader } from "@/components/ui";
 import { fmtPct, fmtPrice, cls } from "@/lib/format";
+import { Sym, useFavourites } from "@/components/symbol";
 
 interface T { symbol: string; last: number; changePct: number; high: number; low: number; quoteVolume: number }
 
 export default function Markets() {
   const { data } = useApi<T[]>("/api/markets?n=60", 30000);
   const [q, setQ] = useState("");
+  const [onlyFav, setOnlyFav] = useState(false);
+  const { isFav } = useFavourites();
   const [buy, setBuy] = useState<T | null>(null);
   const [size, setSize] = useState(250); const [sl, setSl] = useState(2); const [tp, setTp] = useState(4);
   const [busy, setBusy] = useState(false);
-  const list = (data ?? []).filter((t) => t.symbol.toLowerCase().includes(q.toLowerCase()));
+  const list = (data ?? []).filter((t) => t.symbol.toLowerCase().includes(q.toLowerCase())).filter((t) => !onlyFav || isFav(t.symbol))
+    .sort((a, b) => Number(isFav(b.symbol)) - Number(isFav(a.symbol)));
   const doBuy = async () => {
     if (!buy) return; setBusy(true);
     try { await api("/api/trade", "POST", { symbol: buy.symbol, notionalUsd: size, stopLossPct: sl, takeProfitPct: tp }); await refresh("/api"); setBuy(null); } catch (e) { alert((e as Error).message); } finally { setBusy(false); }
@@ -20,6 +24,7 @@ export default function Markets() {
   return (
     <>
       <PageHeader title="Markets" sub="Top spot pairs by 24h volume. Refreshes every 30s.">
+        <button className={cls("btn", onlyFav && "btn-primary")} onClick={() => setOnlyFav(!onlyFav)}>★ Favourites</button>
         <input className="input !w-56" placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
       </PageHeader>
       <div className="grid xl:grid-cols-3 gap-4">
@@ -30,7 +35,7 @@ export default function Markets() {
                 const pos = t.high > t.low ? ((t.last - t.low) / (t.high - t.low)) * 100 : 50;
                 return (
                   <tr key={t.symbol}>
-                    <td className="text-muted text-xs">{i + 1}</td><td className="font-medium">{t.symbol}</td>
+                    <td className="text-muted text-xs">{i + 1}</td><td className="font-medium"><Sym symbol={t.symbol} /></td>
                     <td className="num text-right">{fmtPrice(t.last)}</td>
                     <td className={cls("num text-right", t.changePct >= 0 ? "text-up" : "text-down")}>{fmtPct(t.changePct)}</td>
                     <td className="text-right"><div className="inline-block w-24 h-1.5 rounded bg-panel-2 relative align-middle"><div className="absolute top-0 bottom-0 w-1 rounded bg-accent" style={{ left: `calc(${pos}% - 2px)` }} /></div></td>

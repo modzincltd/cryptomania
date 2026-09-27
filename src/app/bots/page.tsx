@@ -4,6 +4,7 @@ import { useApi } from "@/lib/client";
 import { Card, Empty, PageHeader, StatusPill } from "@/components/ui";
 import { BotControls } from "@/components/bot-controls";
 import { fmtAgo, fmtUsd } from "@/lib/format";
+import { Sym } from "@/components/symbol";
 
 interface Bot { id: number; name: string; symbol: string; strategy: string; timeframe: string; intervalSec: number; status: string; mode: string; allocationUsd: number; lastRunAt: number | null; lastSignal: string | null; lastError: string | null; haltedUntil: number | null; risk: { stopLossPct: number; takeProfitPct: number } }
 
@@ -25,7 +26,7 @@ export default function BotsPage() {
                 return (
                   <tr key={b.id}>
                     <td><Link href={`/bots/${b.id}`} className="font-medium hover:text-accent">{b.name}</Link> <StatusPill status={b.mode} /></td>
-                    <td className="num">{b.symbol}</td>
+                    <td className="num"><Sym symbol={b.symbol} /></td>
                     <td className="text-muted">{b.strategy} · {b.timeframe}</td>
                     <td className="num text-muted">{b.intervalSec}s</td>
                     <td className="num text-right">{fmtUsd(b.allocationUsd, 0)}</td>

@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api, refresh, useApi } from "@/lib/client";
 import { Card } from "./ui";
+import { StarToggle } from "./symbol";
 
 interface StrategyMeta { id: string; name: string; description: string; defaultParams: Record<string, number>; paramLabels: Record<string, string> }
 export interface BotFormValues {
@@ -18,10 +19,11 @@ const DEFAULTS: BotFormValues = {
 
 export function BotForm({ initial, botId }: { initial?: Partial<BotFormValues>; botId?: number }) {
   const router = useRouter();
+  const qsSymbol = useSearchParams().get("symbol");
   const { data: strategies } = useApi<StrategyMeta[]>("/api/strategies", 0);
   const { data: markets } = useApi<{ symbol: string }[]>("/api/markets?n=60", 0);
   const { data: engine } = useApi<{ liveKeys: boolean }>("/api/engine", 0);
-  const [v, setV] = useState<BotFormValues>({ ...DEFAULTS, ...initial, risk: { ...DEFAULTS.risk, ...(initial?.risk ?? {}) } });
+  const [v, setV] = useState<BotFormValues>({ ...DEFAULTS, ...(qsSymbol ? { symbol: qsSymbol.toUpperCase() } : {}), ...initial, risk: { ...DEFAULTS.risk, ...(initial?.risk ?? {}) } });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const strat = strategies?.find((s) => s.id === v.strategy);
@@ -50,7 +52,7 @@ export function BotForm({ initial, botId }: { initial?: Partial<BotFormValues>; 
         <Card title="Market & schedule">
           <div className="p-4 grid md:grid-cols-2 gap-4">
             <label className="block"><span className="label">Name</span><input className="input" placeholder="auto" value={v.name} onChange={(e) => set("name", e.target.value)} /></label>
-            <label className="block"><span className="label">Symbol</span>
+            <label className="block"><span className="label">Symbol <StarToggle symbol={v.symbol} size={12} /></span>
               <input className="input num" list="symbols" value={v.symbol} onChange={(e) => set("symbol", e.target.value.toUpperCase())} />
               <datalist id="symbols">{markets?.map((m) => <option key={m.symbol} value={m.symbol} />)}</datalist>
             </label>

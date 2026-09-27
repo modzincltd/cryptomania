@@ -124,3 +124,54 @@ Analyse the snapshot and call submit_scan.`;
   log(`AI scan complete: ${data.regime}, ${rows.length} suggestions (${res.usage.input_tokens}+${res.usage.output_tokens} tokens)`);
   return { scan, suggestions: rows };
 }
+
+// ---------- single-asset deep dive ----------
+const ASSET_TOOL = {
+  name: "submit_analysis",
+  description: "Submit a structured deep-dive on one asset.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      bias: { type: "string", enum: ["bullish", "bearish", "neutral"] },
+      thesis: { type: "string", description: "4-6 sentences: trend, momentum, volatility, key levels, and how the news flow fits." },
+      keyLevels: { type: "object", properties: { support: { type: "array", items: { type: "number" } }, resistance: { type: "array", items: { type: "number" } } }, required: ["support", "resistance"] },
+      risks: { type: "array", items: { type: "string" } },
+      suggestion: {
+        type: "object", description: "Only if a long setup exists; otherwise side=avoid.",
+        properties: { side: { type: "string", enum: ["long", "avoid"] }, entry: { type: "number" }, stopLoss: { type: "number" }, takeProfit: { type: "number" }, confidence: { type: "integer" }, timeframe: { type: "string" }, rationale: { type: "string" }, riskReward: { type: "number" } },
+        required: ["side", "entry", "stopLoss", "takeProfit", "confidence", "timeframe", "rationale", "riskReward"],
+      },
+    },
+    required: ["bias", "thesis", "keyLevels", "risks", "suggestion"],
+  },
+};
+
+export async function analyseAsset(symbol: string) {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY missing in .env");
+  const { assetOverview } = await import("./asset");
+  const { newsFor } = await import("./news");
+  const g = getGlobal();
+  const [a, news] = await Promise.all([assetOverview(symbol), newsFor(symbol).catch(() => [])]);
+  const client = new Anthropic();
+  const model = g.aiModel || "claude-sonnet-5";
+  const res = await client.messages.create({
+    model, max_tokens: 2500,
+    system: `You are a disciplined spot crypto analyst (long-only, no leverage) writing a deep-dive for one asset. Use ONLY the data provided. Reference concrete numbers. Headlines are context for sentiment/catalysts only; do not treat them as verified facts. Stops ~1-2x ATR below structure, targets >= 1.5R. If nothing is actionable, say so and set side=avoid.`,
+    tools: [ASSET_TOOL], tool_choice: { type: "tool", name: "submit_analysis" },
+    messages: [{ role: "user", content: `Asset: ${a.symbol} (${a.name}) price ${a.price}\nPerformance: ${JSON.stringify(a.perf)}\nIndicators: ${JSON.stringify(a.indicators)}\nMy open/closed positions here: ${a.positions.length}\nRecent headlines (newest first):\n${news.slice(0, 15).map((n) => `- [${n.source}] ${n.title}`).join("\n") || "none"}\n\nCall submit_analysis.` }],
+  });
+  const block = res.content.find((b) => b.type === "tool_use");
+  if (!block || block.type !== "tool_use") throw new Error("Model returned no structured result");
+  const data = block.input as { bias: string; thesis: string; keyLevels: { support: number[]; resistance: number[] }; risks: string[]; suggestion: Suggestion };
+  const now = Date.now();
+  let suggestionRow = null;
+  if (data.suggestion) {
+    const s = data.suggestion;
+    suggestionRow = db.insert(schema.suggestions).values({
+      scanId: null, symbol, side: s.side, entry: s.entry, stopLoss: s.stopLoss, takeProfit: s.takeProfit, confidence: Math.max(0, Math.min(100, Math.round(s.confidence))),
+      timeframe: s.timeframe, rationale: s.rationale, riskReward: s.riskReward, status: "new", createdAt: now,
+    }).returning().get();
+  }
+  log(`AI deep-dive ${symbol}: ${data.bias} (${res.usage.input_tokens}+${res.usage.output_tokens} tokens)`);
+  return { ...data, suggestion: suggestionRow, model, tokens: res.usage.input_tokens + res.usage.output_tokens, createdAt: now };
+}

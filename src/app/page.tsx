@@ -6,6 +6,7 @@ import { EquityChart } from "@/components/equity-chart";
 import { PositionsTable, type LivePosition } from "@/components/positions-table";
 import { fmtUsd, fmtPct, fmtTime, fmtPrice, fmtQty, cls, pnlClass } from "@/lib/format";
 import { BotControls } from "@/components/bot-controls";
+import { Sym } from "@/components/symbol";
 
 interface Dash {
   equity: { cash: number; positionsValue: number; equity: number; unrealized: number; positions: LivePosition[] };
@@ -62,7 +63,7 @@ export default function Dashboard() {
                   <li key={b.id} className="px-4 py-3 flex items-center gap-3">
                     <div className="min-w-0 flex-1">
                       <Link href={`/bots/${b.id}`} className="text-sm font-medium hover:text-accent">{b.name}</Link>
-                      <div className="text-xs text-muted truncate">{b.symbol} · {b.strategy} · {b.intervalSec}s{sig ? ` · ${sig.action.toUpperCase()}: ${sig.reason}` : ""}{b.lastError ? ` · ⚠ ${b.lastError}` : ""}</div>
+                      <div className="text-xs text-muted truncate"><Sym symbol={b.symbol} size={12} /> · {b.strategy} · {b.intervalSec}s{sig ? ` · ${sig.action.toUpperCase()}: ${sig.reason}` : ""}{b.lastError ? ` · ⚠ ${b.lastError}` : ""}</div>
                     </div>
                     <StatusPill status={b.status} />
                     <BotControls id={b.id} status={b.status} compact />
@@ -78,7 +79,7 @@ export default function Dashboard() {
         {data.recentTrades.length ? (
           <table className="tbl"><thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th className="text-right">Qty</th><th className="text-right">Price</th><th>Reason</th></tr></thead>
             <tbody>{data.recentTrades.map((t) => (
-              <tr key={t.id}><td className="text-xs text-muted">{fmtTime(t.createdAt)}</td><td>{t.symbol}</td><td className={cls("font-semibold text-xs", t.side === "buy" ? "text-up" : "text-down")}>{t.side.toUpperCase()}</td><td className="num text-right">{fmtQty(t.qty)}</td><td className="num text-right">{fmtPrice(t.price)}</td><td className={cls("text-xs text-muted", pnlClass(null))}>{t.reason}</td></tr>
+              <tr key={t.id}><td className="text-xs text-muted">{fmtTime(t.createdAt)}</td><td><Sym symbol={t.symbol} /></td><td className={cls("font-semibold text-xs", t.side === "buy" ? "text-up" : "text-down")}>{t.side.toUpperCase()}</td><td className="num text-right">{fmtQty(t.qty)}</td><td className="num text-right">{fmtPrice(t.price)}</td><td className={cls("text-xs text-muted", pnlClass(null))}>{t.reason}</td></tr>
             ))}</tbody></table>
         ) : <Empty>No fills yet.</Empty>}
       </Card>

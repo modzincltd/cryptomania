@@ -2,7 +2,7 @@ export type Mode = "paper" | "live";
 export type BotStatus = "running" | "paused" | "stopped";
 export type StrategyId = "rsi" | "ema_cross" | "bollinger" | "breakout" | "macd";
 export type IntervalSec = 30 | 60 | 300;
-export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h";
+export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 
 export interface RiskConfig {
   stopLossPct: number;        // e.g. 2 = 2%
