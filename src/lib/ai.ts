@@ -6,6 +6,7 @@ import { getGlobal } from "./settings";
 import { openPositions } from "./executor";
 import { listBots } from "./bots";
 import { log } from "./log";
+import { normalizeScan } from "./ai-normalize";
 import type { Suggestion } from "./types";
 
 interface SymbolSnapshot {
@@ -98,7 +99,7 @@ ${JSON.stringify(snap)}
 Analyse the snapshot and call submit_scan.`;
 
   const res = await callStructured<{ regime: string; summary: string; suggestions: Suggestion[] }>({ system, user, tool: TOOL, maxTokens: 4000 });
-  const data = res.data, model = `${res.provider}/${res.model}`;
+  const data = normalizeScan(res.data), model = `${res.provider}/${res.model}`;
 
   const now = Date.now();
   const scan = await q<ScanRow>(sb.from("scans").insert({ createdAt: now, summary: data.summary, regime: data.regime, universe: snap.map((s) => s.symbol), model, inputTokens: res.inputTokens, outputTokens: res.outputTokens }).select().single());

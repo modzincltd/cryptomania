@@ -3,6 +3,7 @@ import { callStructured } from "./llm";
 import { dexPair, dexTrending, type DexPair } from "./dex";
 import { newsFor } from "./news";
 import { log } from "./log";
+import { normalizeScan } from "./ai-normalize";
 import type { Suggestion } from "./types";
 
 const compact = (p: DexPair) => ({
@@ -35,14 +36,15 @@ export async function runDexScan() {
     user: `UTC ${new Date().toISOString()}\nTrending/boosted DEX pairs (pre-scored, flags = our safety filters):\n${JSON.stringify(pairs.map(compact))}\n\nReturn 3-6 suggestions (longs and avoids). Call submit_dex_scan.`,
   });
   const now = Date.now(); const model = `${res.provider}/${res.model}`;
-  const scan = await q<ScanRow>(sb.from("scans").insert({ createdAt: now, summary: `[DEX] ${res.data.summary}`, regime: res.data.regime, universe: pairs.map((p) => p.pairId), model, inputTokens: res.inputTokens, outputTokens: res.outputTokens }).select().single());
+  const data = normalizeScan(res.data) as typeof res.data;
+  const scan = await q<ScanRow>(sb.from("scans").insert({ createdAt: now, summary: `[DEX] ${data.summary}`, regime: data.regime, universe: pairs.map((p) => p.pairId), model, inputTokens: res.inputTokens, outputTokens: res.outputTokens }).select().single());
   const valid = new Map(pairs.map((p) => [p.pairId, p]));
-  const rows = res.data.suggestions.filter((s) => valid.has(s.pairId)).map((s) => ({
+  const rows = data.suggestions.filter((s) => valid.has(s.pairId)).map((s) => ({
     scanId: scan.id, pairId: s.pairId, symbol: valid.get(s.pairId)!.symbol, side: s.side, entry: s.entry, stopLoss: s.stopLoss, takeProfit: s.takeProfit,
     confidence: Math.max(0, Math.min(100, Math.round(s.confidence))), timeframe: s.timeframe, rationale: s.rationale, riskReward: s.riskReward, status: "new", createdAt: now,
   }));
   if (rows.length) await q(sb.from("suggestions").insert(rows));
-  log(`AI DEX scan: ${res.data.regime}, ${rows.length} suggestions (${model})`);
+  log(`AI DEX scan: ${data.regime}, ${rows.length} suggestions (${model})`);
   return { scan, suggestions: rows };
 }
 
