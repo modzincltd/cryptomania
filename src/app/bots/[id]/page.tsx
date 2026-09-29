@@ -7,10 +7,10 @@ import { BotControls } from "@/components/bot-controls";
 import { BotForm, type BotFormValues } from "@/components/bot-form";
 import { Sym } from "@/components/symbol";
 import { DexBotForm } from "@/components/dex-bot-form";
-import { fmtPct, fmtPrice, fmtTime, fmtUsd, cls, pnlClass, fmtAgo } from "@/lib/format";
+import { fmtPct, fmtPrice, fmtTime, fmtUsd, cls, pnlClass, fmtAgo, parseSignal } from "@/lib/format";
 
 interface Detail {
-  bot: BotFormValues & { id: number; pairId?: string | null; status: string; lastSignal: string | null; lastError: string | null; lastRunAt: number | null };
+  bot: BotFormValues & { id: number; pairId?: string | null; status: string; lastSignal: unknown; lastError: string | null; lastRunAt: number | null };
   positions: { id: number; entryAt: number; exitAt: number | null; entryPrice: number; exitPrice: number | null; price: number | null; live: boolean; qty: number; pnl: number | null; pnlPct: number | null; status: string; exitReason: string | null }[];
   logs: { id: number; ts: number; level: string; message: string }[];
 }
@@ -24,7 +24,7 @@ export default function BotDetail({ params }: { params: Promise<{ id: string }> 
   if (!data) return <div className="text-muted text-sm">Loading…</div>;
   const { bot, positions, logs } = data;
   let sig: { action: string; reason: string; indicators: Record<string, unknown>; price: number } | null = null;
-  try { sig = bot.lastSignal ? JSON.parse(bot.lastSignal) : null; } catch {}
+  sig = parseSignal(bot.lastSignal);
   const del = async () => { if (!confirm("Delete this bot?")) return; try { await api(`/api/bots/${id}`, "DELETE"); await refresh("/api"); router.push("/bots"); } catch (e) { alert((e as Error).message); } };
   const closedPnl = positions.filter((p) => p.status === "closed").reduce((a, p) => a + (p.pnl ?? 0), 0);
 

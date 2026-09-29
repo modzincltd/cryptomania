@@ -4,14 +4,14 @@ import { useApi } from "@/lib/client";
 import { Card, Empty, PageHeader, Stat, StatusPill } from "@/components/ui";
 import { EquityChart } from "@/components/equity-chart";
 import { PositionsTable, type LivePosition } from "@/components/positions-table";
-import { fmtUsd, fmtPct, fmtTime, fmtPrice, fmtQty, cls, pnlClass } from "@/lib/format";
+import { fmtUsd, fmtPct, fmtTime, fmtPrice, fmtQty, cls, pnlClass, parseSignal } from "@/lib/format";
 import { BotControls } from "@/components/bot-controls";
 import { Sym } from "@/components/symbol";
 
 interface Dash {
   equity: { cash: number; positionsValue: number; equity: number; unrealized: number; positions: LivePosition[] };
   stats: { totalTrades: number; winRate: number; realized: number; realizedToday: number; profitFactor: number; startCash: number };
-  bots: { id: number; name: string; symbol: string; pairId?: string | null; strategy: string; status: string; mode: string; intervalSec: number; lastSignal: string | null; lastError: string | null; lastRunAt: number | null }[];
+  bots: { id: number; name: string; symbol: string; pairId?: string | null; strategy: string; status: string; mode: string; intervalSec: number; lastSignal: unknown; lastError: string | null; lastRunAt: number | null }[];
   recentTrades: { id: number; symbol: string; pairId?: string | null; side: string; qty: number; price: number; reason: string | null; createdAt: number; mode: string }[];
   lastScan: { createdAt: number; summary: string; regime: string } | null;
   engine: { online: boolean };
@@ -58,7 +58,7 @@ export default function Dashboard() {
             <ul className="divide-y divide-border">
               {bots.map((b) => {
                 let sig: { action: string; reason: string } | null = null;
-                try { sig = b.lastSignal ? JSON.parse(b.lastSignal) : null; } catch {}
+                sig = parseSignal(b.lastSignal);
                 return (
                   <li key={b.id} className="px-4 py-3 flex items-center gap-3">
                     <div className="min-w-0 flex-1">

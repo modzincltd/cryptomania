@@ -9,8 +9,8 @@ export const openaiKey = () => process.env.OPENAI_API_KEY || process.env.OPEN_AI
 export const anthropicKey = () => process.env.ANTHROPIC_API_KEY || "";
 export const providerKeys = () => ({ anthropic: !!anthropicKey(), openai: !!openaiKey() });
 
-export function activeProvider(): { provider: Provider; model: string } {
-  const g = getGlobal();
+export async function activeProvider(): Promise<{ provider: Provider; model: string }> {
+  const g = await getGlobal();
   const keys = providerKeys();
   let provider: Provider = g.aiProvider;
   if (!keys[provider]) provider = keys.openai ? "openai" : "anthropic"; // fall back to whichever key exists
@@ -21,7 +21,7 @@ export function activeProvider(): { provider: Provider; model: string } {
 }
 
 export async function callStructured<T>(opts: { system: string; user: string; tool: StructuredTool; maxTokens?: number }): Promise<LlmResult<T>> {
-  const { provider, model } = activeProvider();
+  const { provider, model } = await activeProvider();
   if (provider === "openai") {
     if (!openaiKey()) throw new Error("OPEN_AI_KEY / OPENAI_API_KEY missing in .env");
     const r = await fetch("https://api.openai.com/v1/chat/completions", {

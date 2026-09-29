@@ -1,5 +1,5 @@
 import { callStructured } from "./llm";
-import { db, schema } from "./db";
+import { q, sb, type ScanRow } from "./db";
 import { fetchCandles, topSymbols, exchangeId } from "./exchange";
 import { atr, ema, rsi, last, round, sma } from "./indicators";
 import { getGlobal } from "./settings";
@@ -15,7 +15,7 @@ interface SymbolSnapshot {
 }
 
 export async function buildMarketSnapshot(n?: number): Promise<SymbolSnapshot[]> {
-  const g = getGlobal();
+  const g = await getGlobal();
   const top = await topSymbols(g.quote, n ?? g.universeSize);
   const out: SymbolSnapshot[] = [];
   for (const t of top) {
@@ -75,11 +75,11 @@ const TOOL = {
 };
 
 export async function runScan(opts: { universe?: number } = {}) {
-  const g = getGlobal();
+  const g = await getGlobal();
   const snap = await buildMarketSnapshot(opts.universe);
   if (!snap.length) throw new Error("No market data available");
-  const open = openPositions().map((p) => `${p.symbol} long @ ${p.entryPrice}`);
-  const bots = listBots().filter((b) => b.status === "running").map((b) => `${b.name} (${b.symbol}, ${b.strategy})`);
+  const open = (await openPositions()).map((p) => `${p.symbol} long @ ${p.entryPrice}`);
+  const bots = (await listBots()).filter((b) => b.status === "running").map((b) => `${b.name} (${b.symbol}, ${b.strategy})`);
 
   const system = `You are a disciplined spot crypto analyst producing actionable, risk-managed trade ideas for a retail trader using ${exchangeId()} spot markets (long-only, no leverage).
 Rules:
@@ -101,17 +101,14 @@ Analyse the snapshot and call submit_scan.`;
   const data = res.data, model = `${res.provider}/${res.model}`;
 
   const now = Date.now();
-  const scan = db.insert(schema.scans).values({
-    createdAt: now, summary: data.summary, regime: data.regime, universe: JSON.stringify(snap.map((s) => s.symbol)),
-    model, inputTokens: res.inputTokens, outputTokens: res.outputTokens,
-  }).returning().get();
+  const scan = await q<ScanRow>(sb.from("scans").insert({ createdAt: now, summary: data.summary, regime: data.regime, universe: snap.map((s) => s.symbol), model, inputTokens: res.inputTokens, outputTokens: res.outputTokens }).select().single());
   const validSymbols = new Set(snap.map((s) => s.symbol));
   const rows = data.suggestions.filter((s) => validSymbols.has(s.symbol)).map((s) => ({
     scanId: scan.id, symbol: s.symbol, side: s.side, entry: s.entry, stopLoss: s.stopLoss, takeProfit: s.takeProfit,
     confidence: Math.max(0, Math.min(100, Math.round(s.confidence))), timeframe: s.timeframe, rationale: s.rationale,
     riskReward: s.riskReward, status: "new", createdAt: now,
   }));
-  if (rows.length) db.insert(schema.suggestions).values(rows).run();
+  if (rows.length) await q(sb.from("suggestions").insert(rows));
   log(`AI scan complete: ${data.regime}, ${rows.length} suggestions (${model}, ${res.inputTokens}+${res.outputTokens} tokens)`);
   return { scan, suggestions: rows };
 }
@@ -152,10 +149,7 @@ export async function analyseAsset(symbol: string) {
   let suggestionRow = null;
   if (data.suggestion) {
     const s = data.suggestion;
-    suggestionRow = db.insert(schema.suggestions).values({
-      scanId: null, symbol, side: s.side, entry: s.entry, stopLoss: s.stopLoss, takeProfit: s.takeProfit, confidence: Math.max(0, Math.min(100, Math.round(s.confidence))),
-      timeframe: s.timeframe, rationale: s.rationale, riskReward: s.riskReward, status: "new", createdAt: now,
-    }).returning().get();
+    suggestionRow = await q(sb.from("suggestions").insert({ scanId: null, symbol, side: s.side, entry: s.entry, stopLoss: s.stopLoss, takeProfit: s.takeProfit, confidence: Math.max(0, Math.min(100, Math.round(s.confidence))), timeframe: s.timeframe, rationale: s.rationale, riskReward: s.riskReward, status: "new", createdAt: now }).select().single());
   }
   log(`AI deep-dive ${symbol}: ${data.bias} (${model}, ${res.inputTokens}+${res.outputTokens} tokens)`);
   return { ...data, suggestion: suggestionRow, model, tokens: res.inputTokens + res.outputTokens, createdAt: now };

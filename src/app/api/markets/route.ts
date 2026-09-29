@@ -5,6 +5,6 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   return handle(async () => {
     const n = Number(new URL(req.url).searchParams.get("n") ?? 50);
-    return topSymbols(getGlobal().quote, n);
+    return topSymbols((await getGlobal()).quote, n);
   });
 }

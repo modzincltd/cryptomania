@@ -1,7 +1,4 @@
-import { desc } from "drizzle-orm";
-import { db, schema } from "@/lib/db";
+import { q, sb, type LogRow } from "@/lib/db";
 import { handle } from "@/lib/api";
 export const dynamic = "force-dynamic";
-export async function GET(req: Request) {
-  return handle(() => db.select().from(schema.logs).orderBy(desc(schema.logs.ts)).limit(Number(new URL(req.url).searchParams.get("limit") ?? 200)).all());
-}
+export async function GET(req: Request) { return handle(() => q<LogRow[]>(sb.from("logs").select("*").order("ts", { ascending: false }).limit(Number(new URL(req.url).searchParams.get("limit") ?? 200)))); }

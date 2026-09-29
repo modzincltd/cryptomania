@@ -17,7 +17,7 @@ export interface DexPair {
 
 export interface DexFilters { chains: string[]; minLiqUsd: number; minAgeMin: number; minVol24h: number; maxAgeDays: number }
 export const DEFAULT_DEX_FILTERS: DexFilters = { chains: ["solana", "base", "ethereum", "bsc"], minLiqUsd: 50_000, minAgeMin: 60, minVol24h: 100_000, maxAgeDays: 0 };
-export function getDexFilters(): DexFilters { return { ...DEFAULT_DEX_FILTERS, ...getSetting<Partial<DexFilters>>("dex_filters", {}) }; }
+export async function getDexFilters(): Promise<DexFilters> { return { ...DEFAULT_DEX_FILTERS, ...(await getSetting<Partial<DexFilters>>("dex_filters", {})) }; }
 
 const H = { headers: { "user-agent": "Mozilla/5.0 CryptoMania/1.0", accept: "application/json" } };
 const BASE = "https://api.dexscreener.com";
@@ -81,7 +81,7 @@ const pairCache = new Map<string, { at: number; p: DexPair }>();
 function remember(p: DexPair) { pairCache.set(p.pairId, { at: Date.now(), p }); return p; }
 
 export async function dexPairsByTokens(chain: string, addresses: string[]): Promise<DexPair[]> {
-  const f = getDexFilters(); const out: DexPair[] = [];
+  const f = await getDexFilters(); const out: DexPair[] = [];
   for (let i = 0; i < addresses.length; i += 30) {
     const batch = addresses.slice(i, i + 30);
     const raw = await getJson<Raw[]>(`/tokens/v1/${chain}/${batch.join(",")}`).catch(() => []);
@@ -98,7 +98,7 @@ function bestPerToken(pairs: DexPair[]) {
 }
 
 export async function dexTrending(): Promise<DexPair[]> {
-  const f = getDexFilters();
+  const f = await getDexFilters();
   const [boosted, top] = await Promise.all([getJson<Raw[]>("/token-boosts/latest/v1").catch(() => []), getJson<Raw[]>("/token-boosts/top/v1").catch(() => [])]);
   const byChain = new Map<string, Set<string>>();
   for (const t of [...top, ...boosted]) { if (!f.chains.includes(t.chainId)) continue; if (!byChain.has(t.chainId)) byChain.set(t.chainId, new Set()); byChain.get(t.chainId)!.add(t.tokenAddress); }
@@ -107,7 +107,7 @@ export async function dexTrending(): Promise<DexPair[]> {
 }
 
 export async function dexNew(): Promise<DexPair[]> {
-  const f = getDexFilters();
+  const f = await getDexFilters();
   const profiles = await getJson<Raw[]>("/token-profiles/latest/v1").catch(() => []);
   const byChain = new Map<string, Set<string>>();
   for (const t of profiles) { if (!f.chains.includes(t.chainId)) continue; if (!byChain.has(t.chainId)) byChain.set(t.chainId, new Set()); byChain.get(t.chainId)!.add(t.tokenAddress); }
@@ -116,7 +116,7 @@ export async function dexNew(): Promise<DexPair[]> {
 }
 
 export async function dexSearch(q: string): Promise<DexPair[]> {
-  const f = getDexFilters();
+  const f = await getDexFilters();
   const r = await getJson<{ pairs: Raw[] }>(`/latest/dex/search?q=${encodeURIComponent(q)}`);
   return (r.pairs ?? []).filter((p) => f.chains.includes(p.chainId)).map((p) => remember(normalize(p, f))).sort((a, b) => b.liquidityUsd - a.liquidityUsd).slice(0, 40);
 }
@@ -128,7 +128,7 @@ export async function dexPair(pairId: string, maxAgeMs = 10_000): Promise<DexPai
   const r = await getJson<{ pairs: Raw[] | null; pair?: Raw }>(`/latest/dex/pairs/${chain}/${addr}`);
   const raw = r.pair ?? r.pairs?.[0];
   if (!raw) throw new Error(`Pair ${pairId} not found`);
-  return remember(normalize(raw, getDexFilters()));
+  return remember(normalize(raw, await getDexFilters()));
 }
 
 export async function dexPrices(pairIds: string[]): Promise<Record<string, DexPair>> {
@@ -138,7 +138,8 @@ export async function dexPrices(pairIds: string[]): Promise<Record<string, DexPa
   for (const [chain, addrs] of byChain) {
     for (let i = 0; i < addrs.length; i += 30) {
       const r = await getJson<{ pairs: Raw[] | null }>(`/latest/dex/pairs/${chain}/${addrs.slice(i, i + 30).join(",")}`).catch(() => ({ pairs: [] }));
-      for (const raw of r.pairs ?? []) { const p = remember(normalize(raw, getDexFilters())); out[p.pairId] = p; }
+      const f = await getDexFilters();
+      for (const raw of r.pairs ?? []) { const p = remember(normalize(raw, f)); out[p.pairId] = p; }
     }
   }
   return out;

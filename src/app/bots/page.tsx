@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useApi } from "@/lib/client";
 import { Card, Empty, PageHeader, StatusPill } from "@/components/ui";
 import { BotControls } from "@/components/bot-controls";
-import { fmtAgo, fmtUsd } from "@/lib/format";
+import { fmtAgo, fmtUsd, parseSignal } from "@/lib/format";
 import { Sym } from "@/components/symbol";
 
-interface Bot { id: number; name: string; symbol: string; pairId?: string | null; strategy: string; timeframe: string; intervalSec: number; status: string; mode: string; allocationUsd: number; lastRunAt: number | null; lastSignal: string | null; lastError: string | null; haltedUntil: number | null; risk: { stopLossPct: number; takeProfitPct: number } }
+interface Bot { id: number; name: string; symbol: string; pairId?: string | null; strategy: string; timeframe: string; intervalSec: number; status: string; mode: string; allocationUsd: number; lastRunAt: number | null; lastSignal: unknown; lastError: string | null; haltedUntil: number | null; risk: { stopLossPct: number; takeProfitPct: number } }
 
 export default function BotsPage() {
   const { data: bots } = useApi<Bot[]>("/api/bots", 10000);
@@ -24,7 +24,7 @@ export default function BotsPage() {
             <tbody>
               {bots.map((b) => {
                 let sig: { action: string; reason: string } | null = null;
-                try { sig = b.lastSignal ? JSON.parse(b.lastSignal) : null; } catch {}
+                sig = parseSignal(b.lastSignal);
                 return (
                   <tr key={b.id}>
                     <td><Link href={`/bots/${b.id}`} className="font-medium hover:text-accent">{b.name}</Link> <StatusPill status={b.mode} /></td>

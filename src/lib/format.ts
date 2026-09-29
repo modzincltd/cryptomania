@@ -10,3 +10,9 @@ export const fmtAgo = (ts: number | null | undefined) => {
 };
 export const cls = (...a: (string | false | null | undefined)[]) => a.filter(Boolean).join(" ");
 export const pnlClass = (v: number | null | undefined) => v == null ? "" : v > 0 ? "text-up" : v < 0 ? "text-down" : "text-muted";
+/** lastSignal may arrive as a JSON string (old SQLite rows) or an object (Postgres jsonb). */
+export function parseSignal<T = { action: string; reason: string; indicators: Record<string, unknown>; price: number }>(v: unknown): T | null {
+  if (!v) return null;
+  if (typeof v === "string") { try { return JSON.parse(v) as T; } catch { return null; } }
+  return v as T;
+}

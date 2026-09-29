@@ -1,4 +1,4 @@
-import { db, schema } from "./db";
+import { q, sb, type ScanRow, type SuggestionRow } from "./db";
 import { callStructured } from "./llm";
 import { dexPair, dexTrending, type DexPair } from "./dex";
 import { newsFor } from "./news";
@@ -35,13 +35,13 @@ export async function runDexScan() {
     user: `UTC ${new Date().toISOString()}\nTrending/boosted DEX pairs (pre-scored, flags = our safety filters):\n${JSON.stringify(pairs.map(compact))}\n\nReturn 3-6 suggestions (longs and avoids). Call submit_dex_scan.`,
   });
   const now = Date.now(); const model = `${res.provider}/${res.model}`;
-  const scan = db.insert(schema.scans).values({ createdAt: now, summary: `[DEX] ${res.data.summary}`, regime: res.data.regime, universe: JSON.stringify(pairs.map((p) => p.pairId)), model, inputTokens: res.inputTokens, outputTokens: res.outputTokens }).returning().get();
+  const scan = await q<ScanRow>(sb.from("scans").insert({ createdAt: now, summary: `[DEX] ${res.data.summary}`, regime: res.data.regime, universe: pairs.map((p) => p.pairId), model, inputTokens: res.inputTokens, outputTokens: res.outputTokens }).select().single());
   const valid = new Map(pairs.map((p) => [p.pairId, p]));
   const rows = res.data.suggestions.filter((s) => valid.has(s.pairId)).map((s) => ({
     scanId: scan.id, pairId: s.pairId, symbol: valid.get(s.pairId)!.symbol, side: s.side, entry: s.entry, stopLoss: s.stopLoss, takeProfit: s.takeProfit,
     confidence: Math.max(0, Math.min(100, Math.round(s.confidence))), timeframe: s.timeframe, rationale: s.rationale, riskReward: s.riskReward, status: "new", createdAt: now,
   }));
-  if (rows.length) db.insert(schema.suggestions).values(rows).run();
+  if (rows.length) await q(sb.from("suggestions").insert(rows));
   log(`AI DEX scan: ${res.data.regime}, ${rows.length} suggestions (${model})`);
   return { scan, suggestions: rows };
 }
@@ -64,7 +64,7 @@ export async function analyseDexPair(pairId: string) {
     user: `Pair: ${JSON.stringify(compact(p))}\nToken: ${p.baseName} (${p.baseAddress})\nHeadlines: ${news.slice(0, 8).map((n) => n.title).join(" | ") || "none"}\n\nCall submit_dex_analysis.`,
   });
   const now = Date.now(); const s = res.data.suggestion;
-  const row = db.insert(schema.suggestions).values({ scanId: null, pairId, symbol: p.symbol, side: s.side, entry: s.entry, stopLoss: s.stopLoss, takeProfit: s.takeProfit, confidence: Math.max(0, Math.min(100, Math.round(s.confidence))), timeframe: s.timeframe, rationale: s.rationale, riskReward: s.riskReward, status: "new", createdAt: now }).returning().get();
+  const row = await q<SuggestionRow>(sb.from("suggestions").insert({ scanId: null, pairId, symbol: p.symbol, side: s.side, entry: s.entry, stopLoss: s.stopLoss, takeProfit: s.takeProfit, confidence: Math.max(0, Math.min(100, Math.round(s.confidence))), timeframe: s.timeframe, rationale: s.rationale, riskReward: s.riskReward, status: "new", createdAt: now }).select().single());
   log(`AI DEX deep-dive ${p.symbol}: ${res.data.bias}, rug ${res.data.rugRisk}`);
   return { ...res.data, suggestion: row, model: `${res.provider}/${res.model}`, tokens: res.inputTokens + res.outputTokens, createdAt: now };
 }

@@ -1,23 +1,27 @@
-import { eq } from "drizzle-orm";
-import { db, schema } from "@/lib/db";
-import { listBots, type BotRow } from "@/lib/bots";
-import { parseBot } from "@/lib/bots";
+import { q, sb } from "@/lib/db";
+import { listBots, updateBot, type Bot } from "@/lib/bots";
 import { getStrategy } from "@/lib/strategies";
-import { fetchCandles } from "@/lib/exchange";
+import { fetchCandles, fetchTickers } from "@/lib/exchange";
 import { checkExit, closePosition, openPosition, openPositions, realizedPnlSince, startOfDay, updateHighWater } from "@/lib/executor";
 import { computeEquity, snapshotEquity } from "@/lib/portfolio";
 import { runScan } from "@/lib/ai";
 import { getGlobal, getSetting, setSetting } from "@/lib/settings";
 import { log } from "@/lib/log";
-import { dexPair, dexPrices, isDexPair } from "@/lib/dex";
+import { dexPair, dexPrices, isDexPair, type DexPair } from "@/lib/dex";
 import { DEX_STRATEGIES } from "@/lib/dex-strategies";
-import { sqlite } from "@/lib/db";
 
-type Bot = ReturnType<typeof parseBot>;
-const running = new Set<number>(); // bots mid-tick (avoid overlap)
+const running = new Set<number>();
+const RUG_LIQ_DROP = 0.4;
 
-function setBot(id: number, patch: Partial<BotRow>) {
-  db.update(schema.bots).set(patch).where(eq(schema.bots.id, id)).run();
+async function recordTick(pairId: string, price: number, liq: number) {
+  await sb.from("dex_ticks").upsert({ pairId, ts: Date.now(), price, liq }, { onConflict: "pairId,ts", ignoreDuplicates: true });
+}
+
+async function guardEntry(bot: Bot, signalReason: string): Promise<boolean> {
+  const dayPnl = await realizedPnlSince(startOfDay(), bot.id);
+  if (dayPnl <= -bot.risk.maxDailyLossUsd) { await updateBot(bot.id, { haltedUntil: startOfDay() + 86_400_000 }); log(`Daily loss limit hit (${dayPnl.toFixed(2)}). Halted until tomorrow.`, { level: "warn", botId: bot.id }); return false; }
+  if (await inCooldown(bot)) { log(`Buy signal ignored — cooldown (${signalReason})`, { botId: bot.id }); return false; }
+  return true;
 }
 
 export async function tickBot(bot: Bot) {
@@ -30,55 +34,24 @@ export async function tickBot(bot: Bot) {
     const strat = getStrategy(bot.strategy);
     const candles = await fetchCandles(bot.symbol, bot.timeframe, Math.max(strat.minCandles + 20, 200));
     if (candles.length < strat.minCandles) throw new Error(`Only ${candles.length} candles, need ${strat.minCandles}`);
-    const price = candles[candles.length - 1].close; // live price incl. forming candle
-    const signal = strat.evaluate(candles.slice(0, -1), bot.params); // signals only on closed candles
-    const open = openPositions(bot.id);
-
-    // 1) manage open positions: hard exits first
-    for (const pos of open) {
+    const price = candles[candles.length - 1].close;
+    const signal = strat.evaluate(candles.slice(0, -1), bot.params);
+    for (const pos of await openPositions(bot.id)) {
       const ex = checkExit(pos, price);
       if (ex.reason) { await closePosition(pos.id, ex.reason); continue; }
-      if (ex.highWater !== pos.highWater) updateHighWater(pos.id, ex.highWater);
+      if (ex.highWater !== pos.highWater) await updateHighWater(pos.id, ex.highWater);
       if (signal.action === "sell") await closePosition(pos.id, `Signal: ${signal.reason}`);
     }
-
-    // 2) entries
-    const stillOpen = openPositions(bot.id);
-    if (signal.action === "buy" && stillOpen.length < bot.risk.maxOpenPositions) {
-      // per-bot daily loss guard
-      const dayPnl = realizedPnlSince(startOfDay(), bot.id);
-      if (dayPnl <= -bot.risk.maxDailyLossUsd) {
-        const until = startOfDay() + 86_400_000;
-        setBot(bot.id, { haltedUntil: until });
-        log(`Daily loss limit hit (${dayPnl.toFixed(2)}). Halted until tomorrow.`, { level: "warn", botId: bot.id });
-      } else if (inCooldown(bot)) {
-        log(`Buy signal ignored — cooldown (${signal.reason})`, { botId: bot.id });
-      } else {
-        try {
-          await openPosition({ botId: bot.id, symbol: bot.symbol, notionalUsd: bot.allocationUsd, mode: bot.mode, risk: bot.risk, reason: signal.reason, source: "bot" });
-        } catch (e) {
-          log(`Entry blocked: ${(e as Error).message}`, { level: "warn", botId: bot.id });
-        }
-      }
+    if (signal.action === "buy" && (await openPositions(bot.id)).length < bot.risk.maxOpenPositions && (await guardEntry(bot, signal.reason))) {
+      try { await openPosition({ botId: bot.id, symbol: bot.symbol, notionalUsd: bot.allocationUsd, mode: bot.mode, risk: bot.risk, reason: signal.reason, source: "bot" }); }
+      catch (e) { log(`Entry blocked: ${(e as Error).message}`, { level: "warn", botId: bot.id }); }
     }
-
-    setBot(bot.id, {
-      lastRunAt: now, lastError: null,
-      lastSignal: JSON.stringify({ action: signal.action, reason: signal.reason, indicators: signal.indicators, price, at: now }),
-    });
+    await updateBot(bot.id, { lastRunAt: now, lastError: null, lastSignal: { action: signal.action, reason: signal.reason, indicators: signal.indicators, price, at: now } });
   } catch (e) {
     const msg = (e as Error).message ?? String(e);
-    setBot(bot.id, { lastRunAt: now, lastError: msg.slice(0, 300) });
+    await updateBot(bot.id, { lastRunAt: now, lastError: msg.slice(0, 300) }).catch(() => {});
     log(`Tick error: ${msg.slice(0, 200)}`, { level: "error", botId: bot.id });
-  } finally {
-    running.delete(bot.id);
-  }
-}
-
-const RUG_LIQ_DROP = 0.4; // exit if pool liquidity falls 40% from entry
-
-function recordTick(pairId: string, price: number, liq: number) {
-  try { sqlite.prepare("INSERT OR IGNORE INTO dex_ticks (pair_id, ts, price, liq) VALUES (?, ?, ?, ?)").run(pairId, Date.now(), price, liq); } catch {}
+  } finally { running.delete(bot.id); }
 }
 
 async function tickDexBot(bot: Bot) {
@@ -86,94 +59,81 @@ async function tickDexBot(bot: Bot) {
   const strat = DEX_STRATEGIES[bot.strategy];
   if (!strat) throw new Error(`Unknown DEX strategy ${bot.strategy}`);
   const p = await dexPair(bot.pairId!, 5_000);
-  recordTick(p.pairId, p.priceUsd, p.liquidityUsd);
-  const open = openPositions(bot.id);
+  await recordTick(p.pairId, p.priceUsd, p.liquidityUsd);
+  const open = await openPositions(bot.id);
   const signal = strat.evaluate(p, bot.params, open.length > 0);
-
   for (const pos of open) {
     if (pos.entryLiquidity && p.liquidityUsd < pos.entryLiquidity * (1 - RUG_LIQ_DROP)) { await closePosition(pos.id, `Liquidity dropped ${Math.round((1 - p.liquidityUsd / pos.entryLiquidity) * 100)}% — rug guard`); continue; }
     const ex = checkExit(pos, p.priceUsd);
     if (ex.reason) { await closePosition(pos.id, ex.reason); continue; }
-    if (ex.highWater !== pos.highWater) updateHighWater(pos.id, ex.highWater);
+    if (ex.highWater !== pos.highWater) await updateHighWater(pos.id, ex.highWater);
     if (signal.action === "sell") await closePosition(pos.id, `Signal: ${signal.reason}`);
   }
-  const stillOpen = openPositions(bot.id);
-  if (signal.action === "buy" && stillOpen.length < bot.risk.maxOpenPositions) {
-    const dayPnl = realizedPnlSince(startOfDay(), bot.id);
-    if (dayPnl <= -bot.risk.maxDailyLossUsd) { setBot(bot.id, { haltedUntil: startOfDay() + 86_400_000 }); log(`Daily loss limit hit (${dayPnl.toFixed(2)}). Halted until tomorrow.`, { level: "warn", botId: bot.id }); }
-    else if (inCooldown(bot)) log(`Buy signal ignored — cooldown (${signal.reason})`, { botId: bot.id });
-    else if (!p.tradable) log(`Buy signal ignored — safety flags: ${p.flags.join(", ")}`, { level: "warn", botId: bot.id });
-    else {
+  if (signal.action === "buy" && (await openPositions(bot.id)).length < bot.risk.maxOpenPositions) {
+    if (!p.tradable) log(`Buy signal ignored — safety flags: ${p.flags.join(", ")}`, { level: "warn", botId: bot.id });
+    else if (await guardEntry(bot, signal.reason)) {
       try { await openPosition({ botId: bot.id, symbol: bot.symbol, pairId: bot.pairId, notionalUsd: bot.allocationUsd, mode: bot.mode, risk: bot.risk, reason: signal.reason, source: "bot" }); }
       catch (e) { log(`Entry blocked: ${(e as Error).message}`, { level: "warn", botId: bot.id }); }
     }
   }
-  setBot(bot.id, { lastRunAt: now, lastError: null, lastSignal: JSON.stringify({ action: signal.action, reason: signal.reason, indicators: signal.indicators, price: p.priceUsd, at: now }) });
+  await updateBot(bot.id, { lastRunAt: now, lastError: null, lastSignal: { action: signal.action, reason: signal.reason, indicators: signal.indicators, price: p.priceUsd, at: now } });
 }
 
-function inCooldown(bot: Bot) {
+async function inCooldown(bot: Bot) {
   if (!bot.risk.cooldownSec) return false;
-  const lastClosed = db.select().from(schema.positions).where(eq(schema.positions.botId, bot.id)).all()
-    .filter((p) => p.status === "closed").sort((a, b) => (b.exitAt ?? 0) - (a.exitAt ?? 0))[0];
-  return !!lastClosed && Date.now() - (lastClosed.exitAt ?? 0) < bot.risk.cooldownSec * 1000;
+  const last = await q<{ exitAt: number }[]>(sb.from("positions").select("exitAt").eq("botId", bot.id).eq("status", "closed").order("exitAt", { ascending: false }).limit(1));
+  return !!last[0] && Date.now() - last[0].exitAt < bot.risk.cooldownSec * 1000;
 }
 
-/** Positions opened manually / from AI (no bot) still need SL/TP management. */
 async function tickManualPositions() {
-  const manual = openPositions().filter((p) => p.botId == null && (p.stopLoss || p.takeProfit || p.trailingStopPct));
+  const manual = (await openPositions()).filter((p) => p.botId == null && (p.stopLoss || p.takeProfit || p.trailingStopPct));
   if (!manual.length) return;
-  const { fetchTickers } = await import("@/lib/exchange");
-  const tickers = await fetchTickers(getGlobal().quote);
-  const dex = await dexPrices(manual.filter((p) => isDexPair(p.pairId)).map((p) => p.pairId!)).catch(() => ({} as Record<string, import("@/lib/dex").DexPair>));
+  const tickers = await fetchTickers((await getGlobal()).quote);
+  const dex = await dexPrices(manual.filter((p) => isDexPair(p.pairId)).map((p) => p.pairId!)).catch(() => ({} as Record<string, DexPair>));
   for (const pos of manual) {
     if (isDexPair(pos.pairId)) {
       const d = dex[pos.pairId!]; if (!d) continue;
-      recordTick(d.pairId, d.priceUsd, d.liquidityUsd);
+      await recordTick(d.pairId, d.priceUsd, d.liquidityUsd);
       if (pos.entryLiquidity && d.liquidityUsd < pos.entryLiquidity * (1 - RUG_LIQ_DROP)) { await closePosition(pos.id, "Liquidity collapse — rug guard").catch(() => {}); continue; }
     }
     const price = isDexPair(pos.pairId) ? dex[pos.pairId!]?.priceUsd : tickers[pos.symbol]?.last; if (!price) continue;
     const ex = checkExit(pos, price);
     if (ex.reason) await closePosition(pos.id, ex.reason).catch((e) => log(`Close failed: ${e.message}`, { level: "error" }));
-    else if (ex.highWater !== pos.highWater) updateHighWater(pos.id, ex.highWater);
+    else if (ex.highWater !== pos.highWater) await updateHighWater(pos.id, ex.highWater);
   }
 }
 
-let ticks = 0, lastSnapshot = 0, lastManual = 0;
-
-export async function engineLoop() {
+/** One engine pass. Safe to call from a long-running loop or a cron endpoint. */
+export async function engineLoop(opts: { force?: boolean } = {}) {
   const now = Date.now();
-  ticks++;
-  db.update(schema.engineState).set({ heartbeat: now, ticks }).where(eq(schema.engineState.id, 1)).run();
+  const state = (await q<{ ticks: number }[]>(sb.from("engine_state").select("ticks").eq("id", 1)))[0];
+  await sb.from("engine_state").upsert({ id: 1, heartbeat: now, ticks: (state?.ticks ?? 0) + 1, pid: process.pid });
 
-  const bots = listBots().filter((b) => b.status === "running");
-  const due = bots.filter((b) => !b.lastRunAt || now - b.lastRunAt >= b.intervalSec * 1000 - 500);
+  const bots = (await listBots()).filter((b) => b.status === "running");
+  const due = bots.filter((b) => opts.force || !b.lastRunAt || now - b.lastRunAt >= b.intervalSec * 1000 - 1500);
   await Promise.all(due.map((b) => tickBot(b)));
 
-  if (now - lastManual > 30_000) { lastManual = now; await tickManualPositions().catch((e) => log(`manual tick: ${e.message}`, { level: "error" })); }
+  const lastManual = await getSetting<number>("_last_manual_tick", 0);
+  if (now - lastManual > 25_000) { await setSetting("_last_manual_tick", now); await tickManualPositions().catch((e) => log(`manual tick: ${e.message}`, { level: "error" })); }
 
-  if (now - lastSnapshot > 60_000) {
-    lastSnapshot = now;
-    try { const eq = await computeEquity("paper"); snapshotEquity("paper", eq.equity, eq.cash); } catch (e) { log(`equity snapshot: ${(e as Error).message}`, { level: "warn" }); }
+  const lastSnap = await getSetting<number>("_last_equity_snapshot", 0);
+  if (now - lastSnap > 55_000) {
+    await setSetting("_last_equity_snapshot", now);
+    try { const eq = await computeEquity("paper"); await snapshotEquity("paper", eq.equity, eq.cash); } catch (e) { log(`equity snapshot: ${(e as Error).message}`, { level: "warn" }); }
   }
 
-  // optional scheduled AI scan
-  const g = getGlobal();
+  const g = await getGlobal();
   if (g.aiAutoScanMin > 0 && (process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.OPEN_AI_KEY)) {
-    const lastScan = getSetting<number>("last_auto_scan", 0);
-    if (now - lastScan > g.aiAutoScanMin * 60_000) {
-      setSetting("last_auto_scan", now);
-      runScan().catch((e) => log(`auto scan failed: ${e.message}`, { level: "error" }));
-    }
+    const lastScan = await getSetting<number>("last_auto_scan", 0);
+    if (now - lastScan > g.aiAutoScanMin * 60_000) { await setSetting("last_auto_scan", now); await runScan().catch((e) => log(`auto scan failed: ${e.message}`, { level: "error" })); }
   }
+  return { ticked: due.length, running: bots.length };
 }
 
-export function startEngine() {
-  const now = Date.now();
-  db.update(schema.engineState).set({ startedAt: now, heartbeat: now, pid: process.pid, ticks: 0 }).where(eq(schema.engineState.id, 1)).run();
+/** Local long-running mode (`npm run engine`). */
+export async function startEngine() {
+  await sb.from("engine_state").upsert({ id: 1, startedAt: Date.now(), heartbeat: Date.now(), pid: process.pid, ticks: 0 });
   log(`Engine started (pid ${process.pid})`);
-  const loop = async () => {
-    try { await engineLoop(); } catch (e) { log(`loop error: ${(e as Error).message}`, { level: "error" }); }
-    setTimeout(loop, 5000);
-  };
+  const loop = async () => { try { await engineLoop(); } catch (e) { log(`loop error: ${(e as Error).message}`, { level: "error" }); } setTimeout(loop, 5000); };
   loop();
 }

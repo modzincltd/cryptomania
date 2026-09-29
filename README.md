@@ -1,6 +1,6 @@
 # Crypto Mania
 
-Rules-based crypto bot desk with an AI market scanner. Next.js dashboard + a separate bot engine sharing one SQLite DB.
+Rules-based crypto bot desk with an AI market scanner. Next.js dashboard + bot engine on a shared Supabase (Postgres) DB. Runs on Vercel (engine via Cron) or locally (engine as a process).
 
 - **Paper trading by default** against live exchange prices (Binance public API, switchable). Live mode only unlocks when exchange API keys are present.
 - **Bots** poll on a 30s / 1m / 5m interval (no streaming). Each bot = one symbol + one strategy + risk rules.
@@ -18,24 +18,25 @@ Rules-based crypto bot desk with an AI market scanner. Next.js dashboard + a sep
 
 ## Run
 
+1. Create a Supabase project and run `supabase/schema.sql` in its SQL editor (idempotent).
+2. `cp .env.example .env` and fill `SUPABASE_URL` + `SUPABASE_ROLE` (+ AI key).
+
 ```bash
-cp .env.example .env        # add ANTHROPIC_API_KEY for scans; exchange keys only for live
-npm install                 # (see note below if node_modules already exists)
-npm run dev                 # web on :3000 + engine, both with hot reload
+npm install
+npm run dev                 # web on :3000 + local engine loop (5s scheduler, bots tick on their own interval)
 ```
 
-Or separately: `npm run web` and `npm run engine`. The engine must be running for bots to trade and for stops on manual/AI positions to be enforced — the sidebar shows its heartbeat.
-
-> **Note:** `node_modules` was installed from a Linux VM. On macOS run `rm -rf node_modules && npm install` once so native modules (better-sqlite3, Next SWC) match your platform.
+### Vercel
+Set the same env vars in the project (plus `CRON_SECRET`, any random string). `vercel.json` schedules `/api/cron/tick` every minute; each call runs one engine pass, and a second pass ~30s later if any running bot is on a 30s interval. The sidebar "Engine" pill shows the last tick. For sub-minute ticks on Hobby (daily crons only) or more headroom, point an external pinger at `https://<app>/api/cron/tick?secret=$CRON_SECRET` every 30-60s.
 
 ## Layout
 
 ```
-src/lib/        db (drizzle + better-sqlite3), exchange (ccxt), indicators, strategies, executor (paper/live fills), risk, portfolio, ai
-src/engine/     long-running runner: due-bot ticks, SL/TP management, equity snapshots, optional auto-scan
+src/lib/        db (supabase-js), exchange (ccxt), indicators, strategies, executor (paper/live fills), risk, portfolio, ai
+src/engine/     engineLoop(): due-bot ticks, SL/TP + rug guard, equity snapshots, optional auto-scan. Called by the local loop or /api/cron/tick
 src/app/api/    REST used by the UI
 src/app/        dashboard, bots, ai, markets, trades, settings
-data/           cryptomania.db (gitignored)
+supabase/       schema.sql
 ```
 
 ## Env
@@ -45,7 +46,8 @@ data/           cryptomania.db (gitignored)
 | `EXCHANGE` | `binance` (default) · `kraken` · `coinbase` · `bybit` |
 | `EXCHANGE_API_KEY/SECRET(/PASSWORD)` | live trading only |
 | `OPEN_AI_KEY` / `ANTHROPIC_API_KEY` | AI scans — provider + model chosen in Settings (models listed live from the API) |
-| `DB_PATH` | override sqlite location |
+| `SUPABASE_URL` / `SUPABASE_ROLE` | database |
+| `CRON_SECRET` | protects the cron tick endpoint |
 
 ## Notes
 

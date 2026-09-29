@@ -1,5 +1,4 @@
-import { desc, eq } from "drizzle-orm";
-import { db, schema } from "./db";
+import { q, sb, type PositionRow, type SuggestionRow } from "./db";
 import { fetchCandles, fetchTickers, ensureMarkets } from "./exchange";
 import { atr, bollinger, ema, macd, rsi, sma, last, round } from "./indicators";
 import { getGlobal } from "./settings";
@@ -9,7 +8,7 @@ import { coinName } from "./symbol";
 import { withLivePnl } from "./portfolio";
 
 export async function assetOverview(symbol: string) {
-  const g = getGlobal();
+  const g = await getGlobal();
   const ex = await ensureMarkets();
   if (!ex.markets?.[symbol]) throw new Error(`Unknown market ${symbol}`);
   const [tickers, h1, h4, d1] = await Promise.all([fetchTickers(g.quote), fetchCandles(symbol, "1h", 200, 60_000), fetchCandles(symbol, "4h", 200, 60_000), fetchCandles(symbol, "1d", 120, 300_000)]);
@@ -32,11 +31,11 @@ export async function assetOverview(symbol: string) {
     high7d: Math.max(...week.map((c) => c.high)), low7d: Math.min(...week.map((c) => c.low)),
     high30d: Math.max(...month.map((c) => c.high)), low30d: Math.min(...month.map((c) => c.low)),
   };
-  const positions = db.select().from(schema.positions).where(eq(schema.positions.symbol, symbol)).orderBy(desc(schema.positions.entryAt)).limit(50).all();
-  const suggestions = db.select().from(schema.suggestions).where(eq(schema.suggestions.symbol, symbol)).orderBy(desc(schema.suggestions.createdAt)).limit(20).all();
-  const bots = listBots().filter((b) => b.symbol === symbol);
+  const positions = await q<PositionRow[]>(sb.from("positions").select("*").eq("symbol", symbol).is("pairId", null).order("entryAt", { ascending: false }).limit(50));
+  const suggestions = await q<SuggestionRow[]>(sb.from("suggestions").select("*").eq("symbol", symbol).is("pairId", null).order("createdAt", { ascending: false }).limit(20));
+  const bots = (await listBots()).filter((b) => b.symbol === symbol && !b.pairId);
   return {
-    symbol, name: coinName(symbol), price, ticker: t ?? null, favourite: getFavourites().includes(symbol),
+    symbol, name: coinName(symbol), price, ticker: t ?? null, favourite: (await getFavourites()).includes(symbol),
     indicators: { h1: ind(h1), h4: ind(h4), d1: ind(d1) }, perf,
     spark: h1.slice(-96).map((c) => ({ t: c.ts, v: c.close })),
     positions: await withLivePnl(positions), suggestions, bots,
